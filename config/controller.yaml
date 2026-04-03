@@ -1,0 +1,20 @@
+vehicle_controller:
+  ros__parameters:
+    odom_topic: "/ins/odometry"
+    imu_topic: "/ins/imu"
+    command_topic: "/control/command"
+    control_dt: 0.05
+
+    reference:
+      path_file: "/home/yuxuan/ros_ws/src/vehicle_controller/data/path_ref.mat"
+      speed_mode: "constant"
+      constant_speed: 5.0
+      speed_profile_file: ""
+      search_window: 40
+
+    lateral_mpc:
+      horizon: 25
+      q: [15.0, 12.0, 8.0, 10.0]
+      r: 5.0
+      rd: 15.0
+      kappa_ff_gain: 0.5
