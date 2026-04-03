@@ -1,3 +1,6 @@
+# The MATLAB simulation can be find here
+https://github.com/YuxuanCAVE/Controller_GDP
+
 # vehicle_controller
 
 ROS 2 Python vehicle controller package for OxTS-based state input.
@@ -56,4 +59,4 @@ ros2 launch vehicle_controller vehicle_controller.launch.py
 - Published steering is normalized to `[-1, 1]`.
 - Internal longitudinal output is desired acceleration in `m/s^2`.
 - Published throttle and brake are normalized to `[0, 1]`.
-# vehicle_controller
+
