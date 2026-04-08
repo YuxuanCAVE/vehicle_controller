@@ -12,6 +12,8 @@ class LongitudinalLQR:
         r_accel: float = 0.8,
         a_min: float = -3.0,
         a_max: float = 2.0,
+        int_error_min: float = -10.0,
+        int_error_max: float = 10.0,
     ):
         self.dt = float(dt)
         self.q_speed_error = float(q_speed_error)
@@ -19,6 +21,8 @@ class LongitudinalLQR:
         self.r_accel = float(r_accel)
         self.a_min = float(a_min)
         self.a_max = float(a_max)
+        self.int_error_min = float(int_error_min)
+        self.int_error_max = float(int_error_max)
 
         self.A = np.array(
             [
@@ -38,9 +42,13 @@ class LongitudinalLQR:
         self.R = np.array([[self.r_accel]], dtype=float)
         self.K = self._solve_dlqr_gain(self.A, self.B, self.Q, self.R)
 
-    def step(self, v_ref: float, vx: float, memory: ControllerMemory) -> float:
+    def step(self, v_ref: float, vx: float, memory: ControllerMemory, dt: float) -> float:
         ev = float(v_ref) - float(vx)
-        memory.int_speed_error += ev * self.dt
+        memory.int_speed_error += ev * float(dt)
+        memory.int_speed_error = min(
+            max(memory.int_speed_error, self.int_error_min),
+            self.int_error_max,
+        )
 
         x = np.array(
             [

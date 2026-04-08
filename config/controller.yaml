@@ -2,7 +2,8 @@ vehicle_controller:
   ros__parameters:
     odom_topic: "/ins/odometry"
     imu_topic: "/ins/imu"
-    command_topic: "/control/command"
+    command_topic: "/command"
+    enable_topic: "/enable"
     control_dt: 0.05
 
     reference:
@@ -18,3 +19,70 @@ vehicle_controller:
       r: 5.0
       rd: 15.0
       kappa_ff_gain: 0.5
+
+    longitudinal_lqr:
+      q_speed_error: 8.0
+      q_int_error: 1.5
+      r_accel: 0.8
+      a_min: -3.0
+      a_max: 2.0
+      int_error_min: -10.0
+      int_error_max: 10.0
+
+    timing:
+      dt_min: 0.01
+      dt_max: 0.10
+
+    safety:
+      enabled: true
+      debug_topic: "/safety/debug"
+
+      degraded:
+        lateral_error_enter: 0.60
+        lateral_error_exit: 0.45
+        heading_error_enter: 0.35
+        heading_error_exit: 0.25
+        speed_enter: 12.0
+        speed_exit: 10.0
+        enter_persistence_sec: 0.50
+        exit_persistence_sec: 1.00
+        target_speed_mps: 4.0
+        max_accel_mps2: 0.8
+        max_throttle_norm: 0.35
+        max_steer_rate_radps: 0.35
+        max_steer_abs_rad: 0.45
+        overspeed_brake_accel_mps2: 0.6
+
+      protective_brake:
+        lateral_error_enter: 1.10
+        lateral_error_exit: 0.90
+        heading_error_enter: 0.70
+        heading_error_exit: 0.50
+        speed_enter: 16.0
+        speed_exit: 13.0
+        enter_persistence_sec: 0.30
+        exit_persistence_sec: 1.00
+        target_speed_mps: 2.0
+        max_accel_mps2: 0.0
+        max_throttle_norm: 0.0
+        max_steer_rate_radps: 0.20
+        max_steer_abs_rad: 0.35
+        brake_accel_mps2: 1.2
+
+      controlled_stop:
+        lateral_error_enter: 1.80
+        lateral_error_exit: 1.20
+        heading_error_enter: 1.00
+        heading_error_exit: 0.70
+        speed_enter: 20.0
+        speed_exit: 15.0
+        enter_persistence_sec: 0.20
+        exit_persistence_sec: 1.50
+        target_speed_mps: 0.0
+        max_accel_mps2: 0.0
+        max_throttle_norm: 0.0
+        max_steer_rate_radps: 0.12
+        max_steer_abs_rad: 0.20
+        brake_accel_mps2: 0.8
+        hold_brake_accel_mps2: 1.5
+        hold_speed_mps: 0.5
