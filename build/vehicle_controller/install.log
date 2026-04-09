@@ -4,7 +4,6 @@
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/vehicle_controller_node.py
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/actuator_mapper.py
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/mpc_combined.py
-/home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/recorder.py
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__init__.py
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/reference_manager.py
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/longitudinal_lqr.py
@@ -14,7 +13,6 @@
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/vehicle_controller_node.cpython-310.pyc
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/actuator_mapper.cpython-310.pyc
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/mpc_combined.cpython-310.pyc
-/home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/recorder.cpython-310.pyc
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/__init__.cpython-310.pyc
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/reference_manager.cpython-310.pyc
 /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__pycache__/longitudinal_lqr.cpython-310.pyc

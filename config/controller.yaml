@@ -4,6 +4,7 @@ vehicle_controller:
     imu_topic: "/ins/imu"
     command_topic: "/command"
     enable_topic: "/enable"
+    record_topic: "/controller_record"
     controller:
       lateral: "mpc"
       longitudinal: "lqr"
@@ -59,12 +60,7 @@ vehicle_controller:
       max_lateral_error: 7.0
       max_longitudinal_error: 7.0
       goal_index_margin: 3
-      goal_lateral_error: 2
-      goal_longitudinal_error: 2
+      goal_lateral_error: 2.0
+      goal_longitudinal_error: 2.0
       goal_heading_error: 0.0872664626
       goal_speed_threshold: 0.2
-
-    recorder:
-      enabled: true
-      output_dir: ""
-      file_prefix: "vehicle_record"

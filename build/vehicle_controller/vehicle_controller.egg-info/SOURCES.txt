@@ -28,7 +28,6 @@ vehicle_controller/actuator_mapper.py
 vehicle_controller/lateral_mpc.py
 vehicle_controller/longitudinal_lqr.py
 vehicle_controller/mpc_combined.py
-vehicle_controller/recorder.py
 vehicle_controller/reference_manager.py
 vehicle_controller/state_adapter.py
 vehicle_controller/types.py

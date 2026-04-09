@@ -11,7 +11,7 @@ Current controller stack:
 - lateral MPC + longitudinal LQR as an alternative runtime mode
 - lookup-table-based throttle/brake mapping
 - dynamic update `dt` for integral and rate-limit logic
-- CSV recorder for vehicle state, dynamics, and tracking errors
+- ROS2 record topic for vehicle state, dynamics, and tracking errors
 - normalized command output plus controller enable topic
 
 ## Topics
@@ -23,6 +23,7 @@ Inputs:
 Outputs:
 - `/command` (`std_msgs/msg/Float32MultiArray`)
 - `/enable` (`std_msgs/msg/Bool`)
+- `/controller_record` (`std_msgs/msg/Float32MultiArray`)
 
 `/command` layout:
 - `data[0]`: brake in `[0, 1]`
@@ -33,6 +34,18 @@ Outputs:
 `/enable` semantics:
 - `true`: the controller produced and published a valid command this cycle
 - `false`: the controller is waiting for required inputs or state freshness is not acceptable
+
+`/controller_record` layout:
+- `data[0]`: `stamp_sec`
+- `data[1]`: `actual_loop_dt`
+- `data[2]`: `control_update_dt`
+- `data[3]`: `ref_idx`
+- `data[4:7]`: `x`, `y`, `yaw`
+- `data[7:11]`: `vx`, `vy`, `yaw_rate`, `ax`
+- `data[11:16]`: `xr`, `yr`, `psi_ref`, `kappa_ref`, `v_ref`
+- `data[16:19]`: `e_longitudinal`, `e_lateral`, `e_heading`
+- `data[19:24]`: `steering_rad`, `steering_norm`, `accel_cmd`, `throttle`, `brake`
+- `data[24:26]`: `f_resist`, `f_required`
 
 ## Controller flow
 
@@ -86,7 +99,7 @@ Important parameter groups:
 - `timing.*`: measured `dt` clamp range for update logic
   and the minimum control update period
 - `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
-- `recorder.*`: CSV recording switch and output file options
+- `record_topic`: debug/record topic for ros2 bag logging
 
 The launch file injects these runtime data files automatically:
 - `data/path_ref.mat`
@@ -136,19 +149,17 @@ The default failure thresholds are:
 When either stop condition is triggered, the node publishes a zero command and sets `/enable` to
 `false`.
 
-## Recorder
+## Recording
 
-When `recorder.enabled` is `true`, the node writes one CSV row for each newly published control
-command. By default the file is created under `records/` in the current working directory with a
-timestamped name.
+The node now publishes `/controller_record` for logging with ROS2 bags instead of writing CSV files
+itself. This keeps the workflow aligned with standard `ros2 bag record` output, which is stored as
+`.db3`.
 
-Recorded fields include:
-- position and reference position: `x`, `y`, `xr`, `yr`
-- dynamics: `yaw`, `vx`, `vy`, `yaw_rate`, `ax`
-- reference and tracking quantities: `psi_ref`, `kappa_ref`, `v_ref`
-- tracking errors: `e_longitudinal`, `e_lateral`, `e_heading`
-- control outputs: `steering_rad`, `steering_norm`, `accel_cmd`, `throttle`, `brake`
-- timing: `actual_loop_dt`, `control_update_dt`
+Example:
+
+```bash
+ros2 bag record /ins/odometry /ins/imu /command /enable /controller_record
+```
 
 ## Build
 

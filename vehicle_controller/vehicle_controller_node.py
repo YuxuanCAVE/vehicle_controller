@@ -12,7 +12,6 @@ from vehicle_controller.actuator_mapper import ActuatorMapper
 from vehicle_controller.lateral_mpc import LateralMPC
 from vehicle_controller.longitudinal_lqr import LongitudinalLQR
 from vehicle_controller.mpc_combined import MPCCombined
-from vehicle_controller.recorder import VehicleRecorder
 from vehicle_controller.reference_manager import ReferenceManager
 from vehicle_controller.state_adapter import StateAdapter
 from vehicle_controller.types import ControllerMemory
@@ -29,6 +28,7 @@ class VehicleControllerNode(Node):
         self.declare_parameter("imu_topic", "/ins/imu")
         self.declare_parameter("command_topic", "/command")
         self.declare_parameter("enable_topic", "/enable")
+        self.declare_parameter("record_topic", "/controller_record")
 
         self.declare_parameter("controller.lateral", "mpc")
         self.declare_parameter("controller.longitudinal", "lqr")
@@ -98,14 +98,12 @@ class VehicleControllerNode(Node):
         self.declare_parameter("end_condition.goal_longitudinal_error", 0.5)
         self.declare_parameter("end_condition.goal_heading_error", 0.0872664626)
         self.declare_parameter("end_condition.goal_speed_threshold", 0.2)
-        self.declare_parameter("recorder.enabled", True)
-        self.declare_parameter("recorder.output_dir", "")
-        self.declare_parameter("recorder.file_prefix", "vehicle_record")
 
         odom_topic = self.get_parameter("odom_topic").value
         imu_topic = self.get_parameter("imu_topic").value
         command_topic = self.get_parameter("command_topic").value
         enable_topic = self.get_parameter("enable_topic").value
+        record_topic = self.get_parameter("record_topic").value
 
         controller_lateral = str(self.get_parameter("controller.lateral").value)
         controller_longitudinal = str(self.get_parameter("controller.longitudinal").value)
@@ -175,9 +173,6 @@ class VehicleControllerNode(Node):
         self.goal_speed_threshold = float(
             self.get_parameter("end_condition.goal_speed_threshold").value
         )
-        recorder_enabled = bool(self.get_parameter("recorder.enabled").value)
-        recorder_output_dir = str(self.get_parameter("recorder.output_dir").value)
-        recorder_file_prefix = str(self.get_parameter("recorder.file_prefix").value)
 
         if mpc_a_min < accel_limit_min or mpc_a_max > accel_limit_max:
             raise ValueError(
@@ -200,7 +195,6 @@ class VehicleControllerNode(Node):
             search_window=progress_window,
         )
         self.memory = ControllerMemory()
-        self.recorder = None
 
         self.combined_controller = MPCCombined(
             initial_dt=control_dt,
@@ -256,13 +250,6 @@ class VehicleControllerNode(Node):
             max_pedal_publish=self.max_pedal_publish,
         )
         self.control_dt = control_dt
-        default_record_dir = Path.cwd() / "records"
-        recorder_dir = recorder_output_dir if recorder_output_dir else str(default_record_dir)
-        if recorder_enabled:
-            self.recorder = VehicleRecorder(
-                output_dir=recorder_dir,
-                file_prefix=recorder_file_prefix,
-            )
 
         self.odom_sub = self.create_subscription(
             Odometry, odom_topic, self.odom_callback, 10
@@ -270,6 +257,7 @@ class VehicleControllerNode(Node):
         self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_callback, 10)
         self.command_pub = self.create_publisher(Float32MultiArray, command_topic, 10)
         self.enable_pub = self.create_publisher(Bool, enable_topic, 10)
+        self.record_pub = self.create_publisher(Float32MultiArray, record_topic, 10)
         self.control_timer = self.create_timer(control_dt, self.control_timer_callback)
 
         self._last_wait_log_sec = 0.0
@@ -279,12 +267,10 @@ class VehicleControllerNode(Node):
 
         self.get_logger().info(
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
-            f"command={command_topic}, enable={enable_topic}, "
+            f"command={command_topic}, enable={enable_topic}, record={record_topic}, "
             f"initial_dt={control_dt:.3f}s, min_control_period={self.min_control_period:.3f}s, "
             f"controller={self.control_mode}"
         )
-        if self.recorder is not None:
-            self.get_logger().info(f"recording vehicle data to {self.recorder.path}")
 
     def odom_callback(self, msg: Odometry) -> None:
         self.state_adapter.update_odometry(msg)
@@ -367,7 +353,7 @@ class VehicleControllerNode(Node):
         msg.data = cmd.as_command_array()
         self.command_pub.publish(msg)
         self._publish_enable(True)
-        self._record_step(
+        self._publish_record(
             meas=meas,
             ref_point=ref_point,
             actual_loop_dt=actual_loop_dt,
@@ -515,7 +501,7 @@ class VehicleControllerNode(Node):
         self._publish_enable(False)
         self.get_logger().info(f"controller stopped: {reason}")
 
-    def _record_step(
+    def _publish_record(
         self,
         meas,
         ref_point,
@@ -526,44 +512,36 @@ class VehicleControllerNode(Node):
         cmd,
         act_dbg,
     ) -> None:
-        if self.recorder is None:
-            return
-
-        self.recorder.write(
-            {
-                "stamp_sec": meas.stamp_sec,
-                "actual_loop_dt": actual_loop_dt,
-                "control_update_dt": control_update_dt,
-                "ref_idx": ref_point.idx,
-                "x": meas.x,
-                "y": meas.y,
-                "yaw": meas.yaw,
-                "vx": meas.vx,
-                "vy": meas.vy,
-                "yaw_rate": meas.yaw_rate,
-                "ax": meas.ax,
-                "xr": ref_point.xr,
-                "yr": ref_point.yr,
-                "psi_ref": ref_point.psi_ref,
-                "kappa_ref": ref_point.kappa_ref,
-                "v_ref": ref_point.v_ref,
-                "e_longitudinal": e_longitudinal,
-                "e_lateral": ref_point.e_y,
-                "e_heading": ref_point.e_psi,
-                "steering_rad": steering_exec,
-                "steering_norm": cmd.steering,
-                "accel_cmd": cmd.accel_cmd,
-                "throttle": cmd.throttle,
-                "brake": cmd.brake,
-                "f_resist": act_dbg.f_resist,
-                "f_required": act_dbg.f_required,
-            }
-        )
-
-    def destroy_node(self):
-        if self.recorder is not None:
-            self.recorder.close()
-        return super().destroy_node()
+        msg = Float32MultiArray()
+        msg.data = [
+            float(meas.stamp_sec),
+            float(actual_loop_dt),
+            float(control_update_dt),
+            float(ref_point.idx),
+            float(meas.x),
+            float(meas.y),
+            float(meas.yaw),
+            float(meas.vx),
+            float(meas.vy),
+            float(meas.yaw_rate),
+            float(meas.ax),
+            float(ref_point.xr),
+            float(ref_point.yr),
+            float(ref_point.psi_ref),
+            float(ref_point.kappa_ref),
+            float(ref_point.v_ref),
+            float(e_longitudinal),
+            float(ref_point.e_y),
+            float(ref_point.e_psi),
+            float(steering_exec),
+            float(cmd.steering),
+            float(cmd.accel_cmd),
+            float(cmd.throttle),
+            float(cmd.brake),
+            float(act_dbg.f_resist),
+            float(act_dbg.f_required),
+        ]
+        self.record_pub.publish(msg)
 
 
 def main(args=None) -> None:

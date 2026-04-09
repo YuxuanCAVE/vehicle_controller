@@ -1,1 +1,0 @@
-stamp_sec,actual_loop_dt,control_update_dt,ref_idx,x,y,yaw,vx,vy,yaw_rate,ax,xr,yr,psi_ref,kappa_ref,v_ref,e_longitudinal,e_lateral,e_heading,steering_rad,steering_norm,accel_cmd,throttle,brake,f_resist,f_required
