@@ -85,6 +85,7 @@ Important parameter groups:
 - `accel_limits.*`: MATLAB-synced acceleration bounds from actuator maps
 - `timing.*`: measured `dt` clamp range for update logic
   and the minimum control update period
+- `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
 - `recorder.*`: CSV recording switch and output file options
 
 The launch file injects these runtime data files automatically:
@@ -120,6 +121,20 @@ Numeric shorthand is also accepted for `speed.profile`, for example:
 - `"7"`
 
 The acceleration and brake MAT files are used for lookup-table-based longitudinal actuator mapping.
+
+## End Condition
+
+The controller now has two explicit stop conditions:
+- goal reached: near the final reference index, with small lateral, longitudinal, and heading error,
+  and vehicle speed below a threshold
+- tracking failure: absolute lateral error or absolute longitudinal error exceeds the configured limit
+
+The default failure thresholds are:
+- `end_condition.max_lateral_error = 5.0`
+- `end_condition.max_longitudinal_error = 5.0`
+
+When either stop condition is triggered, the node publishes a zero command and sets `/enable` to
+`false`.
 
 ## Recorder
 

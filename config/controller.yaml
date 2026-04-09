@@ -55,6 +55,15 @@ vehicle_controller:
       dt_max: 0.10
       min_control_period: 0.10
 
+    end_condition:
+      max_lateral_error: 7.0
+      max_longitudinal_error: 7.0
+      goal_index_margin: 3
+      goal_lateral_error: 2
+      goal_longitudinal_error: 2
+      goal_heading_error: 0.0872664626
+      goal_speed_threshold: 0.2
+
     recorder:
       enabled: true
       output_dir: ""

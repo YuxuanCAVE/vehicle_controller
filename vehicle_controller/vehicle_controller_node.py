@@ -91,6 +91,13 @@ class VehicleControllerNode(Node):
         self.declare_parameter("timing.dt_min", 0.01)
         self.declare_parameter("timing.dt_max", 0.10)
         self.declare_parameter("timing.min_control_period", 0.10)
+        self.declare_parameter("end_condition.max_lateral_error", 5.0)
+        self.declare_parameter("end_condition.max_longitudinal_error", 5.0)
+        self.declare_parameter("end_condition.goal_index_margin", 3)
+        self.declare_parameter("end_condition.goal_lateral_error", 0.2)
+        self.declare_parameter("end_condition.goal_longitudinal_error", 0.5)
+        self.declare_parameter("end_condition.goal_heading_error", 0.0872664626)
+        self.declare_parameter("end_condition.goal_speed_threshold", 0.2)
         self.declare_parameter("recorder.enabled", True)
         self.declare_parameter("recorder.output_dir", "")
         self.declare_parameter("recorder.file_prefix", "vehicle_record")
@@ -155,6 +162,19 @@ class VehicleControllerNode(Node):
         self.dt_update_min = float(self.get_parameter("timing.dt_min").value)
         self.dt_update_max = float(self.get_parameter("timing.dt_max").value)
         self.min_control_period = float(self.get_parameter("timing.min_control_period").value)
+        self.max_lateral_error = float(self.get_parameter("end_condition.max_lateral_error").value)
+        self.max_longitudinal_error = float(
+            self.get_parameter("end_condition.max_longitudinal_error").value
+        )
+        self.goal_index_margin = int(self.get_parameter("end_condition.goal_index_margin").value)
+        self.goal_lateral_error = float(self.get_parameter("end_condition.goal_lateral_error").value)
+        self.goal_longitudinal_error = float(
+            self.get_parameter("end_condition.goal_longitudinal_error").value
+        )
+        self.goal_heading_error = float(self.get_parameter("end_condition.goal_heading_error").value)
+        self.goal_speed_threshold = float(
+            self.get_parameter("end_condition.goal_speed_threshold").value
+        )
         recorder_enabled = bool(self.get_parameter("recorder.enabled").value)
         recorder_output_dir = str(self.get_parameter("recorder.output_dir").value)
         recorder_file_prefix = str(self.get_parameter("recorder.file_prefix").value)
@@ -255,6 +275,7 @@ class VehicleControllerNode(Node):
         self._last_wait_log_sec = 0.0
         self._prev_control_start_sec: float | None = None
         self._last_control_update_sec: float | None = None
+        self._controller_stopped = False
 
         self.get_logger().info(
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
@@ -285,6 +306,9 @@ class VehicleControllerNode(Node):
             self._throttled_wait_log(now_sec, "state data received but not fresh enough")
             return
 
+        if self._controller_stopped:
+            return
+
         if not self._should_update_control(now_sec):
             return
 
@@ -293,6 +317,12 @@ class VehicleControllerNode(Node):
         meas = self.state_adapter.build_measured_state(self.memory)
         ref_point = self.reference_manager.query(meas, idx_hint=self.memory.idx_progress)
         self.memory.idx_progress = max(self.memory.idx_progress, ref_point.idx)
+        e_longitudinal = self._compute_longitudinal_error(meas.x, meas.y, ref_point.xr, ref_point.yr, ref_point.psi_ref)
+
+        stop_reason = self._check_end_condition(ref_point, meas.vx, e_longitudinal)
+        if stop_reason is not None:
+            self._stop_controller(stop_reason)
+            return
 
         self.memory.int_speed_error += (ref_point.v_ref - meas.vx) * control_update_dt
 
@@ -342,6 +372,7 @@ class VehicleControllerNode(Node):
             ref_point=ref_point,
             actual_loop_dt=actual_loop_dt,
             control_update_dt=control_update_dt,
+            e_longitudinal=e_longitudinal,
             steering_exec=steering_exec,
             cmd=cmd,
             act_dbg=act_dbg,
@@ -390,6 +421,11 @@ class VehicleControllerNode(Node):
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:
         return max(min(float(value), float(upper)), float(lower))
+
+    def _publish_zero_command(self) -> None:
+        msg = Float32MultiArray()
+        msg.data = [0.0] * 7
+        self.command_pub.publish(msg)
 
     def _resolve_control_mode(self, controller_lateral: str, controller_longitudinal: str) -> str:
         if controller_lateral == "mpc" and controller_longitudinal == "mpc":
@@ -442,22 +478,56 @@ class VehicleControllerNode(Node):
             self.get_logger().info(text)
             self._last_wait_log_sec = now_sec
 
+    @staticmethod
+    def _compute_longitudinal_error(
+        x: float, y: float, xr: float, yr: float, psi_ref: float
+    ) -> float:
+        dx = float(x) - float(xr)
+        dy = float(y) - float(yr)
+        return math.cos(float(psi_ref)) * dx + math.sin(float(psi_ref)) * dy
+
+    def _check_end_condition(self, ref_point, vx: float, e_longitudinal: float) -> str | None:
+        if abs(ref_point.e_y) > self.max_lateral_error:
+            return f"lateral error exceeded limit: {ref_point.e_y:.3f} m"
+        if abs(e_longitudinal) > self.max_longitudinal_error:
+            return f"longitudinal error exceeded limit: {e_longitudinal:.3f} m"
+
+        final_ref_idx = len(self.reference_manager.ref.x) - 1
+        near_goal = ref_point.idx >= max(final_ref_idx - self.goal_index_margin, 0)
+        if not near_goal:
+            return None
+
+        if abs(ref_point.e_y) > self.goal_lateral_error:
+            return None
+        if abs(e_longitudinal) > self.goal_longitudinal_error:
+            return None
+        if abs(ref_point.e_psi) > self.goal_heading_error:
+            return None
+        if abs(float(vx)) > self.goal_speed_threshold:
+            return None
+        return "goal condition satisfied"
+
+    def _stop_controller(self, reason: str) -> None:
+        if self._controller_stopped:
+            return
+        self._controller_stopped = True
+        self._publish_zero_command()
+        self._publish_enable(False)
+        self.get_logger().info(f"controller stopped: {reason}")
+
     def _record_step(
         self,
         meas,
         ref_point,
         actual_loop_dt: float,
         control_update_dt: float,
+        e_longitudinal: float,
         steering_exec: float,
         cmd,
         act_dbg,
     ) -> None:
         if self.recorder is None:
             return
-
-        dx = meas.x - ref_point.xr
-        dy = meas.y - ref_point.yr
-        e_longitudinal = math.cos(ref_point.psi_ref) * dx + math.sin(ref_point.psi_ref) * dy
 
         self.recorder.write(
             {
