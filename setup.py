@@ -13,7 +13,11 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
-        ('share/' + package_name + '/data', glob('data/*')),
+        ('share/' + package_name + '/data', glob('data/*.mat')),
+        (
+            'share/' + package_name + '/data/reference_velocity',
+            glob('data/reference_velocity/*.mat'),
+        ),
     ],
     install_requires=['setuptools', 'numpy', 'scipy'],
     zip_safe=True,

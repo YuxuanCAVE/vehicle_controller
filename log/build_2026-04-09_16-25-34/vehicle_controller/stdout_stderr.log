@@ -1,0 +1,58 @@
+running egg_info
+creating build/vehicle_controller/vehicle_controller.egg-info
+writing build/vehicle_controller/vehicle_controller.egg-info/PKG-INFO
+writing dependency_links to build/vehicle_controller/vehicle_controller.egg-info/dependency_links.txt
+writing entry points to build/vehicle_controller/vehicle_controller.egg-info/entry_points.txt
+writing requirements to build/vehicle_controller/vehicle_controller.egg-info/requires.txt
+writing top-level names to build/vehicle_controller/vehicle_controller.egg-info/top_level.txt
+writing manifest file 'build/vehicle_controller/vehicle_controller.egg-info/SOURCES.txt'
+reading manifest file 'build/vehicle_controller/vehicle_controller.egg-info/SOURCES.txt'
+writing manifest file 'build/vehicle_controller/vehicle_controller.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build
+creating /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib
+creating /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/lateral_mpc.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/state_adapter.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/types.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/vehicle_controller_node.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/actuator_mapper.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/mpc_combined.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/__init__.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/reference_manager.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+copying vehicle_controller/longitudinal_lqr.py -> /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller
+running install
+running install_lib
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/lateral_mpc.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/state_adapter.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/types.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/vehicle_controller_node.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/actuator_mapper.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/mpc_combined.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/__init__.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/reference_manager.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+copying /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build/lib/vehicle_controller/longitudinal_lqr.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/lateral_mpc.py to lateral_mpc.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/state_adapter.py to state_adapter.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/types.py to types.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/vehicle_controller_node.py to vehicle_controller_node.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/actuator_mapper.py to actuator_mapper.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/mpc_combined.py to mpc_combined.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/reference_manager.py to reference_manager.cpython-310.pyc
+byte-compiling /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller/longitudinal_lqr.py to longitudinal_lqr.cpython-310.pyc
+running install_data
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/ament_index
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/ament_index/resource_index
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/ament_index/resource_index/packages
+copying resource/vehicle_controller -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/ament_index/resource_index/packages
+copying package.xml -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/launch
+copying launch/vehicle_controller.launch.py -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/launch
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/config
+copying config/vehicle_params.yaml -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/config
+copying config/controller.yaml -> /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/config
+creating /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/share/vehicle_controller/data
+error: can't copy 'data/reference_velocity': doesn't exist or not a regular file

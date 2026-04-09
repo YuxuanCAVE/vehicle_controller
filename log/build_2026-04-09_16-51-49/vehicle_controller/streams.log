@@ -1,0 +1,21 @@
+[0.337s] Invoking command in '/home/yuxuan/ros_ws/src/vehicle_controller': CONDA_PROMPT_MODIFIER=(TEMP) PYTHONPATH=/home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/vehicle_controller build --build-base /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build install --record /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/install.log --single-version-externally-managed install_data
+[0.453s] running egg_info
+[0.459s] writing build/vehicle_controller/vehicle_controller.egg-info/PKG-INFO
+[0.460s] writing dependency_links to build/vehicle_controller/vehicle_controller.egg-info/dependency_links.txt
+[0.460s] writing entry points to build/vehicle_controller/vehicle_controller.egg-info/entry_points.txt
+[0.460s] writing requirements to build/vehicle_controller/vehicle_controller.egg-info/requires.txt
+[0.460s] writing top-level names to build/vehicle_controller/vehicle_controller.egg-info/top_level.txt
+[0.473s] reading manifest file 'build/vehicle_controller/vehicle_controller.egg-info/SOURCES.txt'
+[0.473s] writing manifest file 'build/vehicle_controller/vehicle_controller.egg-info/SOURCES.txt'
+[0.473s] running build
+[0.473s] running build_py
+[0.473s] running install
+[0.476s] running install_lib
+[0.482s] running install_data
+[0.482s] running install_egg_info
+[0.489s] removing '/home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller-0.0.0-py3.10.egg-info' (and everything under it)
+[0.489s] Copying build/vehicle_controller/vehicle_controller.egg-info to /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages/vehicle_controller-0.0.0-py3.10.egg-info
+[0.489s] running install_scripts
+[0.554s] Installing vehicle_controller_node script to /home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/vehicle_controller
+[0.554s] writing list of installed files to '/home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/install.log'
+[0.569s] Invoked command in '/home/yuxuan/ros_ws/src/vehicle_controller' returned '0': CONDA_PROMPT_MODIFIER=(TEMP) PYTHONPATH=/home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/yuxuan/ros_ws/src/vehicle_controller/install/vehicle_controller/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base build/vehicle_controller build --build-base /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/build install --record /home/yuxuan/ros_ws/src/vehicle_controller/build/vehicle_controller/install.log --single-version-externally-managed install_data

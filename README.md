@@ -7,12 +7,12 @@ https://github.com/YuxuanCAVE/Controller_GDP
 ROS 2 Python vehicle controller package for OxTS-based state input.
 
 Current controller stack:
-- lateral MPC for path tracking
-- longitudinal LQR for speed tracking
+- combined MPC for steering and acceleration tracking
+- lateral MPC + longitudinal LQR as an alternative runtime mode
 - lookup-table-based throttle/brake mapping
 - dynamic update `dt` for integral and rate-limit logic
-- tracking safety supervisor with multi-stage fallback modes
-- normalized command output plus controller enable and safety debug topics
+- CSV recorder for vehicle state, dynamics, and tracking errors
+- normalized command output plus controller enable topic
 
 ## Topics
 
@@ -23,7 +23,6 @@ Inputs:
 Outputs:
 - `/command` (`std_msgs/msg/Float32MultiArray`)
 - `/enable` (`std_msgs/msg/Bool`)
-- `/safety/debug` (`std_msgs/msg/String`)
 
 `/command` layout:
 - `data[0]`: brake in `[0, 1]`
@@ -35,53 +34,40 @@ Outputs:
 - `true`: the controller produced and published a valid command this cycle
 - `false`: the controller is waiting for required inputs or state freshness is not acceptable
 
-`/safety/debug` payload:
-- JSON string with `mode`, `mode_code`, `lateral_error`, `heading_error`, `speed_mps`
-- includes persistence timers, current safety target speed, and `override_active`
-
 ## Controller flow
 
 The runtime path is:
 
 1. Read odometry and IMU from OxTS topics.
 2. Build measured state and reference point on the path.
-3. Compute raw lateral steering and longitudinal acceleration.
-4. Apply delay and steering rate limit.
-5. Run the tracking safety supervisor.
-6. Map the final acceleration command to normalized throttle/brake.
-7. Publish command, enable, and safety debug topics.
+3. Compute control with either combined `mpc + mpc` or decoupled `mpc + lqr` using the actual loop `dt`.
+4. Apply steering rate limit.
+5. Map the final acceleration command to normalized throttle/brake.
+6. Publish command and enable topics.
 
-The lateral MPC and longitudinal LQR still use a fixed model `control_dt`.
-The integral update and steering rate-limit update use measured timestamp gaps with clamping:
+The ROS runtime now follows the MATLAB `mpc_combined` structure directly.
+The controller initializes with `sim.dt = 0.10` and then updates the loop `dt`
+from the actual control callback timing.
+The MPC, integral update, and steering rate-limit logic all use this floating loop `dt`,
+with clamping:
 - `timing.dt_min`
 - `timing.dt_max`
 
-This keeps the controller model fixed while making update logic more robust to real message jitter.
+This keeps the first step well-defined while letting the controller follow actual ROS timing.
+To avoid running the control law faster than intended, the node also enforces
+`timing.min_control_period`. If callbacks arrive faster than that period, the node
+skips command publication and only recomputes and publishes a new command when the minimum
+period elapses.
 
-## Safety supervisor
-
-The tracking safety supervisor sits after the raw controller output and before final actuator command publication.
-
-Monitored signals:
-- lateral tracking error
-- heading error
-- vehicle speed
-- persistence time of safety threshold violations
-
-Modes:
-- `NORMAL`: no safety override
-- `DEGRADED`: reduce target speed, positive acceleration, throttle, and steering rate
-- `PROTECTIVE_BRAKE`: force throttle to zero, apply moderate braking, keep steering smooth
-- `CONTROLLED_STOP`: perform a controlled stop, hold brake at low speed, and avoid aggressive steering
-
-Each mode has YAML-configurable:
-- enter thresholds
-- exit thresholds
-- enter persistence time
-- exit persistence time
-- command limits
-
-Hysteresis is implemented through separate enter and exit thresholds plus exit persistence timers.
+The ROS runtime parameters are now aligned with the newer MATLAB config naming:
+- `controller.*`
+- `sim.*`
+- `ref.*`
+- `speed.*`
+- `mpc_combined.*`
+- `mpc.*`
+- `lon_lqr.*`
+- `accel_limits.*`
 
 ## Configuration
 
@@ -89,13 +75,17 @@ Main configuration file:
 - [config/controller.yaml](/f:/vehicle_controller/config/controller.yaml)
 
 Important parameter groups:
-- `reference.*`: path file, speed mode, constant speed, optional speed profile
-- `lateral_mpc.*`: horizon and weights
-- `longitudinal_lqr.*`: LQR weights, acceleration bounds, integral windup bounds
+- `controller.*`: choose `lateral=mpc, longitudinal=mpc` or `lateral=mpc, longitudinal=lqr`
+- `sim.*`: initial control-loop dt and progress window
+- `ref.*`: reference path location
+- `speed.*`: constant speed or profile configuration
+- `mpc_combined.*`: combined controller horizon and Q/R/Rd weights
+- `mpc.*`: lateral MPC horizon and weights
+- `lon_lqr.*`: longitudinal LQR weights and acceleration limits
+- `accel_limits.*`: MATLAB-synced acceleration bounds from actuator maps
 - `timing.*`: measured `dt` clamp range for update logic
-- `safety.degraded.*`
-- `safety.protective_brake.*`
-- `safety.controlled_stop.*`
+  and the minimum control update period
+- `recorder.*`: CSV recording switch and output file options
 
 The launch file injects these runtime data files automatically:
 - `data/path_ref.mat`
@@ -116,7 +106,34 @@ Required files in `data/`:
 If a speed profile is used, the configured speed profile MAT file must contain:
 - `pathv_ref`
 
+Speed profile selection supports:
+- `speed.mode: "constant"` with `speed.constant_value`
+- `speed.mode: "profile"` with `speed.profile`
+
+For the current packaged data, use:
+- `speed.profile: "referencePath_Velocity_peak_velocity_3"`
+
+Numeric shorthand is also accepted for `speed.profile`, for example:
+- `"3"`
+- `"4"`
+- `"5"`
+- `"7"`
+
 The acceleration and brake MAT files are used for lookup-table-based longitudinal actuator mapping.
+
+## Recorder
+
+When `recorder.enabled` is `true`, the node writes one CSV row for each newly published control
+command. By default the file is created under `records/` in the current working directory with a
+timestamped name.
+
+Recorded fields include:
+- position and reference position: `x`, `y`, `xr`, `yr`
+- dynamics: `yaw`, `vx`, `vy`, `yaw_rate`, `ax`
+- reference and tracking quantities: `psi_ref`, `kappa_ref`, `v_ref`
+- tracking errors: `e_longitudinal`, `e_lateral`, `e_heading`
+- control outputs: `steering_rad`, `steering_norm`, `accel_cmd`, `throttle`, `brake`
+- timing: `actual_loop_dt`, `control_update_dt`
 
 ## Build
 
@@ -137,7 +154,6 @@ ros2 launch vehicle_controller vehicle_controller.launch.py
 ```bash
 ros2 topic echo /command
 ros2 topic echo /enable
-ros2 topic echo /safety/debug
 ```
 
 ## Notes
