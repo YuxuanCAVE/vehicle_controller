@@ -21,19 +21,19 @@ Inputs:
 - `/ins/imu` (`sensor_msgs/msg/Imu`)
 
 Outputs:
-- `/command` (`std_msgs/msg/Float32MultiArray`)
-- `/enable` (`std_msgs/msg/Bool`)
+- `/command` (`sygnal_msgs/msg/InterfaceCommand`)
+- `/enable` (`sygnal_msgs/msg/InterfaceEnable`)
 - `/controller_record` (`std_msgs/msg/Float32MultiArray`)
 
-`/command` layout:
-- `data[0]`: brake in `[0, 1]`
-- `data[1]`: throttle in `[0, 1]`
-- `data[2]`: steering in `[-1, 1]`
-- `data[3:7]`: reserved, currently zero
+`/command.command` layout:
+- `command[0]`: brake in `[0, 1]`
+- `command[1]`: throttle in `[0, 1]`
+- `command[2]`: steering in `[-1, 1]`
+- `command[3:7]`: reserved, currently zero
 
-`/enable` semantics:
-- `true`: the controller produced and published a valid command this cycle
-- `false`: the controller is waiting for required inputs or state freshness is not acceptable
+`/enable.enable` semantics:
+- all 7 entries `true`: the controller produced and published a valid command this cycle
+- all 7 entries `false`: the controller is waiting for required inputs or state freshness is not acceptable
 
 `/controller_record` layout:
 - `data[0]`: `stamp_sec`
@@ -85,7 +85,7 @@ The ROS runtime parameters are now aligned with the newer MATLAB config naming:
 ## Configuration
 
 Main configuration file:
-- [config/controller.yaml](/f:/vehicle_controller/config/controller.yaml)
+- `config/controller.yaml`
 
 Important parameter groups:
 - `controller.*`: choose `lateral=mpc, longitudinal=mpc` or `lateral=mpc, longitudinal=lqr`
@@ -105,6 +105,9 @@ The launch file injects these runtime data files automatically:
 - `data/path_ref.mat`
 - `data/Acc_mapData_noSlope.mat`
 - `data/brake_mapData_noSlope.mat`
+
+If you run the node without explicit file overrides, it resolves these data files from the
+installed package share directory instead of assuming a source-tree path.
 
 ## Data file requirements
 

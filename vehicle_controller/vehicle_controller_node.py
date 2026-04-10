@@ -2,11 +2,13 @@ import math
 from pathlib import Path
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Bool
 from std_msgs.msg import Float32MultiArray
+from sygnal_msgs.msg import InterfaceCommand
+from sygnal_msgs.msg import InterfaceEnable
 
 from vehicle_controller.actuator_mapper import ActuatorMapper
 from vehicle_controller.lateral_mpc import LateralMPC
@@ -21,8 +23,10 @@ class VehicleControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("vehicle_controller")
 
-        package_root = Path(__file__).resolve().parents[1]
-        default_path_file = str(package_root / "data" / "path_ref.mat")
+        package_share_dir = Path(get_package_share_directory("vehicle_controller"))
+        default_path_file = str(package_share_dir / "data" / "path_ref.mat")
+        default_accel_map_file = str(package_share_dir / "data" / "Acc_mapData_noSlope.mat")
+        default_brake_map_file = str(package_share_dir / "data" / "brake_mapData_noSlope.mat")
 
         self.declare_parameter("odom_topic", "/ins/odometry")
         self.declare_parameter("imu_topic", "/ins/imu")
@@ -85,8 +89,8 @@ class VehicleControllerNode(Node):
         self.declare_parameter("vehicle.tire.rear.c", 1.30)
         self.declare_parameter("vehicle.tire.rear.d", 8500.0)
         self.declare_parameter("vehicle.tire.rear.calpha", 116025.0)
-        self.declare_parameter("vehicle.accel_map_file", "")
-        self.declare_parameter("vehicle.brake_map_file", "")
+        self.declare_parameter("vehicle.accel_map_file", default_accel_map_file)
+        self.declare_parameter("vehicle.brake_map_file", default_brake_map_file)
 
         self.declare_parameter("timing.dt_min", 0.01)
         self.declare_parameter("timing.dt_max", 0.10)
@@ -255,8 +259,8 @@ class VehicleControllerNode(Node):
             Odometry, odom_topic, self.odom_callback, 10
         )
         self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_callback, 10)
-        self.command_pub = self.create_publisher(Float32MultiArray, command_topic, 10)
-        self.enable_pub = self.create_publisher(Bool, enable_topic, 10)
+        self.command_pub = self.create_publisher(InterfaceCommand, command_topic, 10)
+        self.enable_pub = self.create_publisher(InterfaceEnable, enable_topic, 10)
         self.record_pub = self.create_publisher(Float32MultiArray, record_topic, 10)
         self.control_timer = self.create_timer(control_dt, self.control_timer_callback)
 
@@ -349,8 +353,8 @@ class VehicleControllerNode(Node):
         self.memory.last_steering_norm = cmd.steering
         self.memory.last_accel_cmd = cmd.accel_cmd
 
-        msg = Float32MultiArray()
-        msg.data = cmd.as_command_array()
+        msg = InterfaceCommand()
+        msg.command = cmd.as_command_array()
         self.command_pub.publish(msg)
         self._publish_enable(True)
         self._publish_record(
@@ -393,8 +397,8 @@ class VehicleControllerNode(Node):
         return self.actuator_mapper.map_command(steering_cmd, accel_cmd, vx)
 
     def _publish_enable(self, enabled: bool) -> None:
-        msg = Bool()
-        msg.data = bool(enabled)
+        msg = InterfaceEnable()
+        msg.enable = [bool(enabled)] * 7
         self.enable_pub.publish(msg)
 
     @staticmethod
@@ -409,8 +413,8 @@ class VehicleControllerNode(Node):
         return max(min(float(value), float(upper)), float(lower))
 
     def _publish_zero_command(self) -> None:
-        msg = Float32MultiArray()
-        msg.data = [0.0] * 7
+        msg = InterfaceCommand()
+        msg.command = [0.0] * 7
         self.command_pub.publish(msg)
 
     def _resolve_control_mode(self, controller_lateral: str, controller_longitudinal: str) -> str:

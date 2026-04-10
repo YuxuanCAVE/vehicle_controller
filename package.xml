@@ -12,6 +12,7 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>sygnal_msgs</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
   <depend>ament_index_python</depend>

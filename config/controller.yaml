@@ -13,9 +13,6 @@ vehicle_controller:
       dt: 0.10
       progress_window: 80
 
-    ref:
-      path_file: "src/vehicle_controller/data/path_ref.mat"
-
     speed:
       mode: "profile"
       constant_value: 10.0

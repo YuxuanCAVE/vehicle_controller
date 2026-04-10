@@ -26,6 +26,3 @@ vehicle_controller:
           c: 1.30
           d: 8500.0
           calpha: 116025.0
-
-      accel_map_file: "data/Acc_mapData_noSlope.mat"
-      brake_map_file: "data/brake_mapData_noSlope.mat"
