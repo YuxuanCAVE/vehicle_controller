@@ -158,7 +158,23 @@ itself. This keeps the workflow aligned with standard `ros2 bag record` output, 
 Example:
 
 ```bash
-ros2 bag record /ins/odometry /ins/imu /command /enable /controller_record
+ros2 bag record \
+  /ins/odometry \
+  /ins/imu \
+  /ins/nav_sat_fix \
+  /ins/nav_sat_ref \
+  /command \
+  /enable \
+  /controller_record \
+  /tf \
+  /tf_static \
+  --output output_path
+```
+
+You can also use the helper script:
+
+```bash
+bash scripts/record_vehicle_bag.sh output_path
 ```
 
 ## Build
