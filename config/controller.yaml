@@ -14,7 +14,7 @@ vehicle_controller:
       progress_window: 80
 
     ref:
-      path_file: "/home/yuxuan/ros_ws/src/vehicle_controller/data/path_ref.mat"
+      path_file: "src/vehicle_controller/data/path_ref.mat"
 
     speed:
       mode: "profile"
