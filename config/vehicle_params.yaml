@@ -1,7 +1,7 @@
 vehicle_controller:
   ros__parameters:
     vehicle:
-      mass: 2070.0
+      mass: 2000.0
       wheelbase: 2.720
       lf: 1.214
       lr: 1.506
