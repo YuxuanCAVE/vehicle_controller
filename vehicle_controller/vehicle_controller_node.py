@@ -7,8 +7,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Float32MultiArray
-from sygnal_msgs.msg import InterfaceCommand
-from sygnal_msgs.msg import InterfaceEnable
+from sygnal_msgs.msg import FaultState, InterfaceCommand, InterfaceEnable, State
 
 from vehicle_controller.actuator_mapper import ActuatorMapper
 from vehicle_controller.lateral_mpc import LateralMPC
@@ -33,6 +32,8 @@ class VehicleControllerNode(Node):
         self.declare_parameter("command_topic", "/command")
         self.declare_parameter("enable_topic", "/enable")
         self.declare_parameter("record_topic", "/controller_record")
+        self.declare_parameter("sygnal_state_topic", "/sygnal_state")
+        self.declare_parameter("sygnal_fault_topic", "/sygnal_fault")
 
         self.declare_parameter("controller.lateral", "mpc")
         self.declare_parameter("controller.longitudinal", "lqr")
@@ -108,6 +109,8 @@ class VehicleControllerNode(Node):
         command_topic = self.get_parameter("command_topic").value
         enable_topic = self.get_parameter("enable_topic").value
         record_topic = self.get_parameter("record_topic").value
+        sygnal_state_topic = self.get_parameter("sygnal_state_topic").value
+        sygnal_fault_topic = self.get_parameter("sygnal_fault_topic").value
 
         controller_lateral = str(self.get_parameter("controller.lateral").value)
         controller_longitudinal = str(self.get_parameter("controller.longitudinal").value)
@@ -259,11 +262,21 @@ class VehicleControllerNode(Node):
             Odometry, odom_topic, self.odom_callback, 10
         )
         self.imu_sub = self.create_subscription(Imu, imu_topic, self.imu_callback, 10)
+        self.sygnal_state_sub = self.create_subscription(
+            State, sygnal_state_topic, self.sygnal_state_callback, 10
+        )
+        self.sygnal_fault_sub = self.create_subscription(
+            FaultState, sygnal_fault_topic, self.sygnal_fault_callback, 10
+        )
         self.command_pub = self.create_publisher(InterfaceCommand, command_topic, 10)
         self.enable_pub = self.create_publisher(InterfaceEnable, enable_topic, 10)
         self.record_pub = self.create_publisher(Float32MultiArray, record_topic, 10)
         self.control_timer = self.create_timer(control_dt, self.control_timer_callback)
 
+        self.sygnal_system_state = ["UNKNOWN", "UNKNOWN"]
+        self.sygnal_interface_state = [False] * 7
+        self.sygnal_fault_active = False
+        self.sygnal_fault_summary = "none"
         self._last_wait_log_sec = 0.0
         self._prev_control_start_sec: float | None = None
         self._last_control_update_sec: float | None = None
@@ -272,6 +285,7 @@ class VehicleControllerNode(Node):
         self.get_logger().info(
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
             f"command={command_topic}, enable={enable_topic}, record={record_topic}, "
+            f"sygnal_state={sygnal_state_topic}, sygnal_fault={sygnal_fault_topic}, "
             f"initial_dt={control_dt:.3f}s, min_control_period={self.min_control_period:.3f}s, "
             f"controller={self.control_mode}"
         )
@@ -282,9 +296,35 @@ class VehicleControllerNode(Node):
     def imu_callback(self, msg: Imu) -> None:
         self.state_adapter.update_imu(msg)
 
+    def sygnal_state_callback(self, msg: State) -> None:
+        self.sygnal_system_state = list(msg.system_state)
+        self.sygnal_interface_state = [bool(value) for value in msg.interface_state]
+
+    def sygnal_fault_callback(self, msg: FaultState) -> None:
+        active_faults = sum(int(fault.fault_count) for fault in msg.fault_list)
+        self.sygnal_fault_active = (
+            int(msg.op1_cause) != 0
+            or int(msg.op2_cause) != 0
+            or int(msg.hard_cause) != 0
+            or active_faults > 0
+        )
+        self.sygnal_fault_summary = (
+            f"op1={int(msg.op1_cause)} op2={int(msg.op2_cause)} "
+            f"hard={int(msg.hard_cause)} count={active_faults}"
+        )
+
     def control_timer_callback(self) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         actual_loop_dt = self._compute_actual_loop_dt(now_sec)
+
+        if self.sygnal_fault_active:
+            self._publish_zero_command()
+            self._publish_enable(False)
+            self._throttled_wait_log(
+                now_sec,
+                f"sygnal fault active: {self.sygnal_fault_summary}",
+            )
+            return
 
         if not self.state_adapter.is_ready():
             self._publish_enable(False)
@@ -398,7 +438,7 @@ class VehicleControllerNode(Node):
 
     def _publish_enable(self, enabled: bool) -> None:
         msg = InterfaceEnable()
-        msg.enable = [bool(enabled)] * 7
+        msg.enable = [bool(enabled), bool(enabled), bool(enabled), False, False, False, False]
         self.enable_pub.publish(msg)
 
     @staticmethod
@@ -414,7 +454,7 @@ class VehicleControllerNode(Node):
 
     def _publish_zero_command(self) -> None:
         msg = InterfaceCommand()
-        msg.command = [0.0] * 7
+        msg.command = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.command_pub.publish(msg)
 
     def _resolve_control_mode(self, controller_lateral: str, controller_longitudinal: str) -> str:

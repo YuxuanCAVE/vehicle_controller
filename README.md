@@ -19,6 +19,8 @@ Current controller stack:
 Inputs:
 - `/ins/odometry` (`nav_msgs/msg/Odometry`)
 - `/ins/imu` (`sensor_msgs/msg/Imu`)
+- `/sygnal_state` (`sygnal_msgs/msg/State`)
+- `/sygnal_fault` (`sygnal_msgs/msg/FaultState`)
 
 Outputs:
 - `/command` (`sygnal_msgs/msg/InterfaceCommand`)
@@ -32,7 +34,7 @@ Outputs:
 - `command[3:7]`: reserved, currently zero
 
 `/enable.enable` semantics:
-- all 7 entries `true`: the controller produced and published a valid command this cycle
+- first 3 entries `true`: brake, throttle, and steering channels are enabled
 - all 7 entries `false`: the controller is waiting for required inputs or state freshness is not acceptable
 
 `/controller_record` layout:
