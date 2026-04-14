@@ -8,6 +8,18 @@ if [[ $# -lt 1 ]]; then
 fi
 
 output_path="$1"
+timestamp="$(date +%Y%m%d_%H%M%S)"
+resolved_output_path="${output_path}_${timestamp}"
+suffix=1
+
+while [[ -e "$resolved_output_path" ]]; do
+  resolved_output_path="${output_path}_${timestamp}_${suffix}"
+  suffix=$((suffix + 1))
+done
+
+mkdir -p "$(dirname "$resolved_output_path")"
+
+echo "Recording bag to: $resolved_output_path"
 
 ros2 bag record \
   /ins/odometry \
@@ -19,4 +31,4 @@ ros2 bag record \
   /controller_record \
   /tf \
   /tf_static \
-  --output "$output_path"
+  --output "$resolved_output_path"

@@ -179,8 +179,12 @@ ros2 bag record \
 You can also use the helper script:
 
 ```bash
-bash scripts/record_vehicle_bag.sh output_path
+bash scripts/record_vehicle_bag.sh cave_runs_record
 ```
+
+The script treats `output_path` as a base name and appends a timestamp suffix, so repeated runs do
+not overwrite earlier recordings. For example, `output_path` becomes
+`output_path_20260414_153000`.
 
 ## Build
 

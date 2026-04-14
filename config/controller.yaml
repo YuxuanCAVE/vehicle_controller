@@ -60,4 +60,4 @@ vehicle_controller:
       goal_lateral_error: 2.0
       goal_longitudinal_error: 2.0
       goal_heading_error: 0.0872664626
-      goal_speed_threshold: 0.2
+      goal_speed_threshold: 2.0
