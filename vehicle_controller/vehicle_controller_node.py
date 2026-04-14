@@ -10,6 +10,7 @@ from std_msgs.msg import Float32MultiArray
 from sygnal_msgs.msg import FaultState, InterfaceCommand, InterfaceEnable, State
 
 from vehicle_controller.actuator_mapper import ActuatorMapper
+from vehicle_controller.kinematic_lateral_mpc import KinematicLateralMPC
 from vehicle_controller.lateral_mpc import LateralMPC
 from vehicle_controller.longitudinal_lqr import LongitudinalLQR
 from vehicle_controller.mpc_combined import MPCCombined
@@ -63,6 +64,13 @@ class VehicleControllerNode(Node):
         self.declare_parameter("mpc.Rd", 15.0)
         self.declare_parameter("mpc.kappa_ff_gain", 0.5)
         self.declare_parameter("mpc.max_steer", 0.6108652382)
+
+        self.declare_parameter("kinematic_mpc.N", 25)
+        self.declare_parameter("kinematic_mpc.Q", [15.0, 12.0])
+        self.declare_parameter("kinematic_mpc.R", 5.0)
+        self.declare_parameter("kinematic_mpc.Rd", 15.0)
+        self.declare_parameter("kinematic_mpc.kappa_ff_gain", 1.0)
+        self.declare_parameter("kinematic_mpc.max_steer", 0.6108652382)
 
         self.declare_parameter("lon_lqr.Q", [20.0, 10.0])
         self.declare_parameter("lon_lqr.R", 0.4)
@@ -140,6 +148,13 @@ class VehicleControllerNode(Node):
         lat_mpc_rd = float(self.get_parameter("mpc.Rd").value)
         lat_mpc_kappa_ff_gain = float(self.get_parameter("mpc.kappa_ff_gain").value)
         lat_mpc_max_steer = float(self.get_parameter("mpc.max_steer").value)
+
+        kin_mpc_horizon = int(self.get_parameter("kinematic_mpc.N").value)
+        kin_mpc_q = self.get_parameter("kinematic_mpc.Q").value
+        kin_mpc_r = float(self.get_parameter("kinematic_mpc.R").value)
+        kin_mpc_rd = float(self.get_parameter("kinematic_mpc.Rd").value)
+        kin_mpc_kappa_ff_gain = float(self.get_parameter("kinematic_mpc.kappa_ff_gain").value)
+        kin_mpc_max_steer = float(self.get_parameter("kinematic_mpc.max_steer").value)
 
         lon_lqr_q = self.get_parameter("lon_lqr.Q").value
         lon_lqr_r = float(self.get_parameter("lon_lqr.R").value)
@@ -221,22 +236,36 @@ class VehicleControllerNode(Node):
             cf=tire_front_calpha,
             cr=tire_rear_calpha,
         )
-        self.lateral_controller = LateralMPC(
-            initial_dt=control_dt,
-            horizon=lat_mpc_horizon,
-            q=lat_mpc_q,
-            r=lat_mpc_r,
-            rd=lat_mpc_rd,
-            kappa_ff_gain=lat_mpc_kappa_ff_gain,
-            max_steer=lat_mpc_max_steer,
-            wheelbase=vehicle_wheelbase,
-            mass=vehicle_mass,
-            iz=vehicle_iz,
-            lf=vehicle_lf,
-            lr=vehicle_lr,
-            cf=tire_front_calpha,
-            cr=tire_rear_calpha,
-        )
+        if controller_lateral in {"mpc", "dynamic_mpc"}:
+            self.lateral_controller = LateralMPC(
+                initial_dt=control_dt,
+                horizon=lat_mpc_horizon,
+                q=lat_mpc_q,
+                r=lat_mpc_r,
+                rd=lat_mpc_rd,
+                kappa_ff_gain=lat_mpc_kappa_ff_gain,
+                max_steer=lat_mpc_max_steer,
+                wheelbase=vehicle_wheelbase,
+                mass=vehicle_mass,
+                iz=vehicle_iz,
+                lf=vehicle_lf,
+                lr=vehicle_lr,
+                cf=tire_front_calpha,
+                cr=tire_rear_calpha,
+            )
+        elif controller_lateral == "kinematic_mpc":
+            self.lateral_controller = KinematicLateralMPC(
+                initial_dt=control_dt,
+                horizon=kin_mpc_horizon,
+                q=kin_mpc_q,
+                r=kin_mpc_r,
+                rd=kin_mpc_rd,
+                kappa_ff_gain=kin_mpc_kappa_ff_gain,
+                max_steer=kin_mpc_max_steer,
+                wheelbase=vehicle_wheelbase,
+            )
+        else:
+            raise ValueError(f"Unsupported lateral controller: {controller_lateral}")
         self.longitudinal_controller = LongitudinalLQR(
             initial_dt=control_dt,
             q=lon_lqr_q,
@@ -458,14 +487,19 @@ class VehicleControllerNode(Node):
         self.command_pub.publish(msg)
 
     def _resolve_control_mode(self, controller_lateral: str, controller_longitudinal: str) -> str:
-        if controller_lateral == "mpc" and controller_longitudinal == "mpc":
+        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "mpc":
             return "mpc_combined"
-        if controller_lateral == "mpc" and controller_longitudinal == "lqr":
+        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "lqr":
             return "mpc+lqr"
+        if controller_lateral == "kinematic_mpc" and controller_longitudinal == "lqr":
+            return "kinematic_mpc+lqr"
         raise ValueError(
             "Supported controller selections are "
-            "'controller.lateral=mpc' with 'controller.longitudinal=mpc' or "
-            "'controller.lateral=mpc' with 'controller.longitudinal=lqr'."
+            "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
+            "'controller.longitudinal=mpc', "
+            "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
+            "'controller.longitudinal=lqr', or "
+            "'controller.lateral=kinematic_mpc' with 'controller.longitudinal=lqr'."
         )
 
     def _compute_actual_loop_dt(self, control_start_sec: float) -> float:

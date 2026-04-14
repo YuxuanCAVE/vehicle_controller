@@ -6,7 +6,7 @@ vehicle_controller:
     enable_topic: "/enable"
     record_topic: "/controller_record"
     controller:
-      lateral: "mpc"
+      lateral: "kinematic_mpc"
       longitudinal: "lqr"
 
     sim:
@@ -38,6 +38,14 @@ vehicle_controller:
       R: 5.0
       Rd: 15.0
       kappa_ff_gain: 0.5
+      max_steer: 0.6108652382
+
+    kinematic_mpc:
+      N: 25
+      Q: [15.0, 12.0]
+      R: 5.0
+      Rd: 15.0
+      kappa_ff_gain: 1.0
       max_steer: 0.6108652382
 
     lon_lqr:
