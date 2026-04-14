@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
-        ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
+        ('share/' + package_name + '/scripts', glob('scripts/*.sh') + glob('scripts/*.py')),
         ('share/' + package_name + '/data', glob('data/*.mat')),
         (
             'share/' + package_name + '/data/reference_velocity',

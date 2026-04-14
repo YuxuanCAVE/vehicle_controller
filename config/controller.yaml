@@ -11,11 +11,11 @@ vehicle_controller:
 
     sim:
       dt: 0.10
-      progress_window: 80
+      progress_window: 5
 
     speed:
-      mode: "profile"
-      constant_value: 10.0
+      mode: "constant"
+      constant_value: 3.0
       profile: "referencePath_Velocity_peak_velocity_3"
 
     accel_limits:

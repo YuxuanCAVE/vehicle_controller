@@ -26,6 +26,8 @@ ros2 bag record \
   /ins/imu \
   /ins/nav_sat_fix \
   /ins/nav_sat_ref \
+  /sygnal_state \
+  /sygnal_fault \
   /command \
   /enable \
   /controller_record \

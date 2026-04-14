@@ -8,8 +8,8 @@ ROS 2 Python vehicle controller package for OxTS-based state input.
 
 Current controller stack:
 - combined MPC for steering and acceleration tracking
-- lateral MPC + longitudinal LQR as an alternative runtime mode
-- lookup-table-based throttle/brake mapping
+- lateral MPC or kinematic lateral MPC + longitudinal LQR as alternative runtime modes
+- speed-aware lookup-table-based throttle/brake mapping
 - dynamic update `dt` for integral and rate-limit logic
 - ROS2 record topic for vehicle state, dynamics, and tracking errors
 - normalized command output plus controller enable topic
@@ -57,7 +57,8 @@ The runtime path is:
 2. Build measured state and reference point on the path.
 3. Compute control with either combined `mpc + mpc` or decoupled `mpc + lqr` using the actual loop `dt`.
 4. Apply steering rate limit.
-5. Map the final acceleration command to normalized throttle/brake.
+5. Map the final acceleration command to normalized throttle/brake using actuator map samples over
+   both requested force and vehicle speed.
 6. Publish command and enable topics.
 
 The ROS runtime now follows the MATLAB `mpc_combined` structure directly.
@@ -90,8 +91,9 @@ Main configuration file:
 - `config/controller.yaml`
 
 Important parameter groups:
-- `controller.*`: choose `lateral=mpc, longitudinal=mpc` or `lateral=mpc, longitudinal=lqr`
-- `sim.*`: initial control-loop dt and progress window
+- `controller.*`: choose `lateral=mpc, longitudinal=mpc`, `lateral=mpc, longitudinal=lqr`, or
+  `lateral=kinematic_mpc, longitudinal=lqr`
+- `sim.*`: initial control-loop dt and reference search window
 - `ref.*`: reference path location
 - `speed.*`: constant speed or profile configuration
 - `mpc_combined.*`: combined controller horizon and Q/R/Rd weights
@@ -138,7 +140,11 @@ Numeric shorthand is also accepted for `speed.profile`, for example:
 - `"5"`
 - `"7"`
 
-The acceleration and brake MAT files are used for lookup-table-based longitudinal actuator mapping.
+The acceleration and brake MAT files are used for speed-aware lookup-table-based longitudinal
+actuator mapping. The runtime expects each sample set to include:
+- command value (`Acc_Full` or `Break_Full`)
+- longitudinal force (`Force_full`)
+- vehicle speed (`Vel_Full`)
 
 ## End Condition
 
@@ -148,8 +154,8 @@ The controller now has two explicit stop conditions:
 - tracking failure: absolute lateral error or absolute longitudinal error exceeds the configured limit
 
 The default failure thresholds are:
-- `end_condition.max_lateral_error = 5.0`
-- `end_condition.max_longitudinal_error = 5.0`
+- `end_condition.max_lateral_error = 7.0`
+- `end_condition.max_longitudinal_error = 7.0`
 
 When either stop condition is triggered, the node publishes a zero command and sets `/enable` to
 `false`.
@@ -168,6 +174,8 @@ ros2 bag record \
   /ins/imu \
   /ins/nav_sat_fix \
   /ins/nav_sat_ref \
+  /sygnal_state \
+  /sygnal_fault \
   /command \
   /enable \
   /controller_record \
@@ -185,6 +193,27 @@ bash scripts/record_vehicle_bag.sh cave_runs_record
 The script treats `output_path` as a base name and appends a timestamp suffix, so repeated runs do
 not overwrite earlier recordings. For example, `output_path` becomes
 `output_path_20260414_153000`.
+
+To expand `/controller_record` into a CSV with column headers after recording:
+
+```bash
+python3 scripts/export_controller_record_csv.py /path/to/bag_dir
+```
+
+By default this writes `controller_record.csv` inside the bag directory. You can also override the
+destination:
+
+```bash
+python3 scripts/export_controller_record_csv.py /path/to/bag_dir --output /tmp/controller_record.csv
+```
+
+To estimate a reasonable `sim.progress_window` from the reference path spacing:
+
+```bash
+python3 scripts/analyze_progress_window.py data/path_ref.mat --dt 0.10 --speeds 1 3 5 8
+```
+
+This reports path spacing statistics and a suggested search-window range for representative speeds.
 
 ## Build
 
@@ -210,7 +239,8 @@ ros2 topic echo /enable
 ## Notes
 
 - Internal steering is kept in radians inside the controller.
-- Published steering is normalized to `[-1, 1]`.
+- Published steering is normalized to `[-1, 1]`, with positive values mapped directly from
+  positive steering radians.
 - Internal longitudinal output is desired acceleration in `m/s^2`.
 - Published throttle and brake are normalized to `[0, 1]`.
 - Launch defaults come from `config/controller.yaml` and `config/vehicle_params.yaml`.

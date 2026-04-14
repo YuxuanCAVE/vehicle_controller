@@ -3,6 +3,7 @@ from typing import Iterable
 
 import numpy as np
 from scipy.io import loadmat
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 
 from vehicle_controller.types import ActuatorDebug, ControlOutput
 
@@ -30,10 +31,19 @@ class ActuatorMapper:
 
         self._validate_map_path(self.accel_map_file, "accel_map_file")
         self._validate_map_path(self.brake_map_file, "brake_map_file")
-        self.acc_cmd_full, self.acc_force_full = self._load_accel_map(self.accel_map_file)
-        self.brake_cmd_full, self.brake_force_full = self._load_brake_map(self.brake_map_file)
+        (
+            self.acc_cmd_full,
+            self.acc_force_full,
+            self.acc_vel_full,
+        ) = self._load_accel_map(self.accel_map_file)
+        (
+            self.brake_cmd_full,
+            self.brake_force_full,
+            self.brake_vel_full,
+        ) = self._load_brake_map(self.brake_map_file)
         self._validate_accel_map()
         self._validate_brake_map()
+        self._build_interpolators()
 
     def map_command(
         self, steering_cmd_rad: float, accel_cmd: float, vx: float
@@ -63,13 +73,12 @@ class ActuatorMapper:
         brk_req = 0.0
 
         if f_required >= 0.0:
-            acc_req = self._interp_extrap(self.acc_force_full, self.acc_cmd_full, f_required)
+            acc_req = self._lookup_accel_command(vx=vx, f_required=f_required)
             throttle_publish = (acc_req / max(float(np.max(self.acc_cmd_full)), 1e-6)) * self.max_pedal_publish
             throttle_publish = self._clamp(throttle_publish, 0.0, self.max_pedal_publish)
         else:
-            f_brake_required = max(-f_required, 0.0)
-            brk_req = self._interp_extrap(self.brake_force_full, self.brake_cmd_full, f_brake_required)
-            brake_publish = (brk_req / max(float(np.max(self.brake_cmd_full)), 1e-6)) * self.max_pedal_publish
+            brk_req = self._lookup_brake_command(vx=vx, f_required=f_required)
+            brake_publish = (abs(brk_req) / max(float(np.max(np.abs(self.brake_cmd_full))), 1e-6)) * self.max_pedal_publish
             brake_publish = self._clamp(brake_publish, 0.0, self.max_pedal_publish)
 
         # Keep MATLAB-style pedal publish saturation internally, then expose
@@ -89,7 +98,7 @@ class ActuatorMapper:
         return float(throttle_norm), float(brake_norm), debug
 
     def _normalize_steering(self, steering_cmd_rad: float) -> float:
-        steering_norm = -float(steering_cmd_rad) / max(self.max_steer, 1e-6)
+        steering_norm = float(steering_cmd_rad) / max(self.max_steer, 1e-6)
         return self._clamp(steering_norm, -1.0, 1.0)
 
     @staticmethod
@@ -100,57 +109,48 @@ class ActuatorMapper:
             raise FileNotFoundError(f"{name} does not exist: {path}")
 
     @staticmethod
-    def _load_accel_map(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    def _load_accel_map(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mat = loadmat(path)
         acc_cmd = _make_col(_get_first_existing_field(mat, ("Acc_Full", "Acc_full")))
         acc_force = _make_col(_get_first_existing_field(mat, ("Force_full", "Force_Full")))
+        acc_vel = _make_col(_get_first_existing_field(mat, ("Vel_Full", "Vel_full")))
 
-        _, unique_idx = np.unique(acc_cmd, return_index=True)
+        points = np.column_stack((acc_vel, acc_force))
+        _, unique_idx = np.unique(points, axis=0, return_index=True)
         unique_idx = np.sort(unique_idx)
-        acc_cmd = acc_cmd[unique_idx]
-        acc_force = acc_force[unique_idx]
-
-        sort_idx = np.argsort(acc_force)
-        return acc_cmd[sort_idx], acc_force[sort_idx]
+        return acc_cmd[unique_idx], acc_force[unique_idx], acc_vel[unique_idx]
 
     @staticmethod
-    def _load_brake_map(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    def _load_brake_map(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mat = loadmat(path)
-        brake_cmd_raw = _make_col(
+        brake_cmd = _make_col(
             _get_first_existing_field(mat, ("Break_Full", "Brake_Full", "Brake_full"))
         )
-        brake_force_raw = _make_col(_get_first_existing_field(mat, ("Force_full", "Force_Full")))
+        brake_force = _make_col(_get_first_existing_field(mat, ("Force_full", "Force_Full")))
+        brake_vel = _make_col(_get_first_existing_field(mat, ("Vel_Full", "Vel_full")))
 
-        brake_cmd_mag = np.abs(brake_cmd_raw)
-        brake_force_mag = np.abs(brake_force_raw)
-
-        _, unique_idx = np.unique(brake_cmd_mag, return_index=True)
+        points = np.column_stack((brake_vel, brake_force))
+        _, unique_idx = np.unique(points, axis=0, return_index=True)
         unique_idx = np.sort(unique_idx)
-        brake_cmd_mag = brake_cmd_mag[unique_idx]
-        brake_force_mag = brake_force_mag[unique_idx]
-
-        # Interpolation later uses force as the independent variable, so the
-        # lookup table must be monotonic in force, not in brake command.
-        sort_idx = np.argsort(brake_force_mag)
-        brake_force_sorted = brake_force_mag[sort_idx]
-        brake_cmd_sorted = brake_cmd_mag[sort_idx]
-        return brake_cmd_sorted, brake_force_sorted
+        return brake_cmd[unique_idx], brake_force[unique_idx], brake_vel[unique_idx]
 
     def _validate_accel_map(self) -> None:
         self._validate_numeric_array(self.acc_cmd_full, "acc_cmd_full")
         self._validate_numeric_array(self.acc_force_full, "acc_force_full")
-        if len(self.acc_cmd_full) < 2 or len(self.acc_force_full) < 2:
-            raise ValueError("Acceleration map must contain at least 2 valid samples.")
-        if not np.all(np.diff(self.acc_force_full) > 0.0):
-            raise ValueError("Acceleration force map must be strictly increasing for interpolation.")
+        self._validate_numeric_array(self.acc_vel_full, "acc_vel_full")
+        if len(self.acc_cmd_full) < 3 or len(self.acc_force_full) < 3 or len(self.acc_vel_full) < 3:
+            raise ValueError("Acceleration map must contain at least 3 valid samples.")
 
     def _validate_brake_map(self) -> None:
         self._validate_numeric_array(self.brake_cmd_full, "brake_cmd_full")
         self._validate_numeric_array(self.brake_force_full, "brake_force_full")
-        if len(self.brake_cmd_full) < 2 or len(self.brake_force_full) < 2:
-            raise ValueError("Brake map must contain at least 2 valid samples.")
-        if not np.all(np.diff(self.brake_force_full) > 0.0):
-            raise ValueError("Brake force map must be strictly increasing for interpolation.")
+        self._validate_numeric_array(self.brake_vel_full, "brake_vel_full")
+        if (
+            len(self.brake_cmd_full) < 3
+            or len(self.brake_force_full) < 3
+            or len(self.brake_vel_full) < 3
+        ):
+            raise ValueError("Brake map must contain at least 3 valid samples.")
 
     @staticmethod
     def _validate_numeric_array(values: np.ndarray, name: str) -> None:
@@ -159,14 +159,50 @@ class ActuatorMapper:
         if not np.all(np.isfinite(values)):
             raise ValueError(f"{name} contains NaN or Inf values.")
 
+    def _build_interpolators(self) -> None:
+        acc_points = np.column_stack((self.acc_vel_full, self.acc_force_full))
+        self._acc_linear = LinearNDInterpolator(acc_points, self.acc_cmd_full)
+        self._acc_nearest = NearestNDInterpolator(acc_points, self.acc_cmd_full)
+
+        brake_points = np.column_stack((self.brake_vel_full, self.brake_force_full))
+        self._brake_linear = LinearNDInterpolator(brake_points, self.brake_cmd_full)
+        self._brake_nearest = NearestNDInterpolator(brake_points, self.brake_cmd_full)
+
+    def _lookup_accel_command(self, vx: float, f_required: float) -> float:
+        return self._lookup_scattered(
+            linear_interp=self._acc_linear,
+            nearest_interp=self._acc_nearest,
+            vx=vx,
+            force=f_required,
+        )
+
+    def _lookup_brake_command(self, vx: float, f_required: float) -> float:
+        return self._lookup_scattered(
+            linear_interp=self._brake_linear,
+            nearest_interp=self._brake_nearest,
+            vx=vx,
+            force=f_required,
+        )
+
     @staticmethod
-    def _interp_extrap(xp: np.ndarray, fp: np.ndarray, x: float) -> float:
-        x = float(x)
-        if x <= xp[0]:
-            return float(fp[0] + (x - xp[0]) * (fp[1] - fp[0]) / max(xp[1] - xp[0], 1e-9))
-        if x >= xp[-1]:
-            return float(fp[-1] + (x - xp[-1]) * (fp[-1] - fp[-2]) / max(xp[-1] - xp[-2], 1e-9))
-        return float(np.interp(x, xp, fp))
+    def _lookup_scattered(
+        linear_interp,
+        nearest_interp,
+        vx: float,
+        force: float,
+    ) -> float:
+        value = linear_interp(float(vx), float(force))
+        if value is None:
+            value = np.nan
+        value = np.asarray(value, dtype=float).reshape(-1)
+        if value.size == 0 or not np.isfinite(value[0]):
+            value = nearest_interp(float(vx), float(force))
+            value = np.asarray(value, dtype=float).reshape(-1)
+        if value.size == 0 or not np.isfinite(value[0]):
+            raise ValueError(
+                f"Could not interpolate actuator map at vx={float(vx):.3f}, force={float(force):.3f}"
+            )
+        return float(value[0])
 
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:
