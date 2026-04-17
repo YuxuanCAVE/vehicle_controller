@@ -1,7 +1,7 @@
 vehicle_controller:
   ros__parameters:
     vehicle:
-      mass: 2000.0
+      mass: 1948.0
       wheelbase: 2.720
       lf: 1.214
       lr: 1.506
@@ -11,9 +11,12 @@ vehicle_controller:
       aero_b: 10.0
       aero_c: 0.518
 
-      max_steer: 0.6108652382
-      max_steer_rate: 0.6981317008
+      max_steer: 0.3490658504
+      max_steer_rate: 0.2617993878
       max_pedal_publish: 0.60
+      sensor_offset_x: 1.14
+      sensor_offset_y: 0.32
+      sensor_offset_z: 0.0
 
       tire:
         front:

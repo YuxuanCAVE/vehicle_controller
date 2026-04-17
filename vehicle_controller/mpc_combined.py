@@ -16,7 +16,7 @@ class MPCCombined:
         r: Sequence[float] = (5.0, 0.5),
         rd: Sequence[float] = (15.0, 2.0),
         kappa_ff_gain: float = 0.5,
-        max_steer: float = 0.6108652382,
+        max_steer: float = 0.3490658504,
         a_min: float = -7.357,
         a_max: float = 3.372,
         wheelbase: float = 2.720,

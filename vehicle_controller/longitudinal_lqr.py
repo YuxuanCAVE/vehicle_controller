@@ -9,8 +9,8 @@ class LongitudinalLQR:
     def __init__(
         self,
         initial_dt: float = 0.10,
-        q: Sequence[float] = (20.0, 10.0),
-        r: float = 0.4,
+        q: Sequence[float] = (10.0, 3.0),
+        r: float = 1.5,
         a_min: float = -7.357,
         a_max: float = 3.372,
         int_error_min: float = -10.0,

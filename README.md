@@ -8,9 +8,10 @@ ROS 2 Python vehicle controller package for OxTS-based state input.
 
 Current controller stack:
 - combined MPC for steering and acceleration tracking
-- lateral MPC or kinematic lateral MPC + longitudinal LQR as alternative runtime modes
-- speed-aware lookup-table-based throttle/brake mapping
-- dynamic update `dt` for integral and rate-limit logic
+- lateral MPC or kinematic lateral MPC with longitudinal PID or LQR as alternative runtime modes
+- 1D lookup-table-based throttle/brake mapping with linear interpolation
+- sensor-position compensation from the OxTS measurement point to the vehicle control point
+- dynamic update `dt` for control, integral, and rate-limit logic
 - ROS2 record topic for vehicle state, dynamics, and tracking errors
 - normalized command output plus controller enable topic
 
@@ -54,15 +55,16 @@ Outputs:
 The runtime path is:
 
 1. Read odometry and IMU from OxTS topics.
-2. Build measured state and reference point on the path.
-3. Compute control with either combined `mpc + mpc` or decoupled `mpc + lqr` using the actual loop `dt`.
-4. Apply steering rate limit.
-5. Map the final acceleration command to normalized throttle/brake using actuator map samples over
-   both requested force and vehicle speed.
-6. Publish command and enable topics.
+2. Convert the OxTS position to the vehicle control point using `p_center = P + R * t`.
+3. Find the nearest reference point. The first query is global; later queries use a local progress window.
+4. Smooth the reference speed in time when speed smoothing is enabled.
+5. Compute control with either combined `mpc + mpc` or decoupled lateral + longitudinal control using the actual loop `dt`.
+6. Apply steering rate limit.
+7. Map the final acceleration command to normalized throttle/brake using 1D actuator lookup tables.
+8. Publish command and enable topics.
 
-The ROS runtime now follows the MATLAB `mpc_combined` structure directly.
-The controller initializes with `sim.dt = 0.10` and then updates the loop `dt`
+The ROS runtime is aligned with the current MATLAB closed-loop structure for the active controller
+and actuator chain. The controller initializes with `sim.dt = 0.10` and then updates the loop `dt`
 from the actual control callback timing.
 The MPC, integral update, and steering rate-limit logic all use this floating loop `dt`,
 with clamping:
@@ -82,24 +84,32 @@ The ROS runtime parameters are now aligned with the newer MATLAB config naming:
 - `speed.*`
 - `mpc_combined.*`
 - `mpc.*`
+- `kinematic_mpc.*`
+- `lon_pid.*`
 - `lon_lqr.*`
 - `accel_limits.*`
+- `vehicle.*`
 
 ## Configuration
 
 Main configuration file:
 - `config/controller.yaml`
+- `config/vehicle_params.yaml`
 
 Important parameter groups:
-- `controller.*`: choose `lateral=mpc, longitudinal=mpc`, `lateral=mpc, longitudinal=lqr`, or
-  `lateral=kinematic_mpc, longitudinal=lqr`
+- `controller.*`: choose `lateral=mpc, longitudinal=mpc`, `lateral=mpc, longitudinal=lqr`,
+  `lateral=mpc, longitudinal=pid`, `lateral=kinematic_mpc, longitudinal=lqr`, or
+  `lateral=kinematic_mpc, longitudinal=pid`
 - `sim.*`: initial control-loop dt and reference search window
 - `ref.*`: reference path location
-- `speed.*`: constant speed or profile configuration
+- `speed.*`: constant speed or profile configuration plus optional reference-speed smoothing
 - `mpc_combined.*`: combined controller horizon and Q/R/Rd weights
 - `mpc.*`: lateral MPC horizon and weights
+- `kinematic_mpc.*`: kinematic lateral MPC horizon and weights
+- `lon_pid.*`: longitudinal PID gains and acceleration limits
 - `lon_lqr.*`: longitudinal LQR weights and acceleration limits
 - `accel_limits.*`: MATLAB-synced acceleration bounds from actuator maps
+- `vehicle.*`: vehicle dimensions, steering limits, actuator files, and sensor offset
 - `timing.*`: measured `dt` clamp range for update logic
   and the minimum control update period
 - `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
@@ -140,11 +150,50 @@ Numeric shorthand is also accepted for `speed.profile`, for example:
 - `"5"`
 - `"7"`
 
-The acceleration and brake MAT files are used for speed-aware lookup-table-based longitudinal
-actuator mapping. The runtime expects each sample set to include:
+The acceleration and brake MAT files are used for 1D longitudinal actuator mapping. The runtime
+expects each sample set to include:
 - command value (`Acc_Full` or `Break_Full`)
 - longitudinal force (`Force_full`)
 - vehicle speed (`Vel_Full`)
+
+At load time, the ROS runtime reduces the raw map samples to monotonic 1D lookup tables and then
+uses linear interpolation at runtime for both:
+- inverse lookup: force -> command
+- forward lookup: command -> achieved force
+
+This matches the current MATLAB structure where inverse lookup and forward execution use the same
+reduced 1D map.
+
+## State Handling
+
+The controller does not use the raw OxTS sensor position directly as the vehicle tracking point.
+Instead, it converts the measured sensor position to the vehicle control point using:
+
+```text
+p_center = P + R * t
+```
+
+where:
+- `P` is the OxTS position from odometry
+- `R` is the `3x3` rotation matrix from the odometry quaternion
+- `t` is the configured sensor offset in vehicle coordinates
+
+The current default offset is configured in `config/vehicle_params.yaml` as:
+- `vehicle.sensor_offset_x = 1.14`
+- `vehicle.sensor_offset_y = 0.32`
+- `vehicle.sensor_offset_z = 0.0`
+
+After this compensation, the controller computes:
+- nearest reference point
+- lateral error `e_y`
+- heading error `e_psi`
+- longitudinal error
+
+all relative to the compensated vehicle control point rather than the raw sensor location.
+
+At startup, the reference match is found globally. Once the controller locks onto the path, it
+switches back to local-window tracking using `sim.progress_window`. This allows the runtime to start
+correctly even when the vehicle is not physically located near reference index `0`.
 
 ## End Condition
 
@@ -159,6 +208,13 @@ The default failure thresholds are:
 
 When either stop condition is triggered, the node publishes a zero command and sets `/enable` to
 `false`.
+
+The default goal thresholds are:
+- `end_condition.goal_index_margin = 3`
+- `end_condition.goal_lateral_error = 2.0`
+- `end_condition.goal_longitudinal_error = 2.0`
+- `end_condition.goal_heading_error = 0.0872664626`
+- `end_condition.goal_speed_threshold = 2.0`
 
 ## Recording
 
@@ -244,3 +300,4 @@ ros2 topic echo /enable
 - Internal longitudinal output is desired acceleration in `m/s^2`.
 - Published throttle and brake are normalized to `[0, 1]`.
 - Launch defaults come from `config/controller.yaml` and `config/vehicle_params.yaml`.
+- The current default runtime configuration is `lateral=kinematic_mpc` with `longitudinal=pid`.

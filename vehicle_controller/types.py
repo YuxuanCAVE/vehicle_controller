@@ -30,7 +30,11 @@ class ReferencePoint:
 @dataclass
 class ControllerMemory:
     idx_progress: int = 0
+    has_reference_lock: bool = False
+    v_ref_smooth: float = 0.0
+    has_speed_ref_lock: bool = False
     int_speed_error: float = 0.0
+    last_speed_error: float = 0.0
     last_update_stamp_sec: float = 0.0
     last_steering_rad: float = 0.0
     last_steering_norm: float = 0.0
@@ -66,3 +70,5 @@ class ActuatorDebug:
     brake_publish: float = 0.0
     throttle_norm: float = 0.0
     brake_norm: float = 0.0
+    f_drive_actual: float = 0.0
+    branch_mode: float = 0.0

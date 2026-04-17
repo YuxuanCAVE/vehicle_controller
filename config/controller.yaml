@@ -7,7 +7,7 @@ vehicle_controller:
     record_topic: "/controller_record"
     controller:
       lateral: "kinematic_mpc"
-      longitudinal: "lqr"
+      longitudinal: "pid"
 
     sim:
       dt: 0.10
@@ -17,6 +17,9 @@ vehicle_controller:
       mode: "constant"
       constant_value: 3.0
       profile: "referencePath_Velocity_peak_velocity_3"
+      smoothing_enabled: true
+      smoothing_accel_scale: 0.85
+      initial_smoothed_value: 0.5
 
     accel_limits:
       a_max: 3.372
@@ -28,7 +31,7 @@ vehicle_controller:
       R: [5.0, 0.5]
       Rd: [15.0, 2.0]
       kappa_ff_gain: 0.5
-      max_steer: 0.6108652382
+      max_steer: 0.3490658504
       a_min: -7.357
       a_max: 3.372
 
@@ -38,19 +41,30 @@ vehicle_controller:
       R: 5.0
       Rd: 15.0
       kappa_ff_gain: 0.5
-      max_steer: 0.6108652382
+      max_steer: 0.3490658504
 
     kinematic_mpc:
-      N: 25
-      Q: [15.0, 12.0]
-      R: 5.0
+      N: 16
+      Q: [2.2, 0.8]
+      R: 25.0
       Rd: 15.0
-      kappa_ff_gain: 1.0
-      max_steer: 0.6108652382
+      kappa_ff_gain: 0.1
+      max_steer: 0.3490658504
+      fallback_k_e_y: 0.9
+      fallback_k_e_psi: 1.4
 
     lon_lqr:
-      Q: [20.0, 10.0]
-      R: 0.4
+      Q: [10.0, 3.0]
+      R: 1.5
+      a_min: -7.357
+      a_max: 3.372
+      int_error_min: -10.0
+      int_error_max: 10.0
+
+    lon_pid:
+      kp: 1.6
+      ki: 0.0
+      kd: 0.0
       a_min: -7.357
       a_max: 3.372
       int_error_min: -10.0

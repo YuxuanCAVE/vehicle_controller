@@ -16,7 +16,7 @@ class LateralMPC:
         r: float = 5.0,
         rd: float = 15.0,
         kappa_ff_gain: float = 0.5,
-        max_steer: float = 0.6108652382,
+        max_steer: float = 0.3490658504,
         wheelbase: float = 2.720,
         mass: float = 1948.0,
         iz: float = 2500.0,

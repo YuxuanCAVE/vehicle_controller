@@ -13,6 +13,7 @@ from vehicle_controller.actuator_mapper import ActuatorMapper
 from vehicle_controller.kinematic_lateral_mpc import KinematicLateralMPC
 from vehicle_controller.lateral_mpc import LateralMPC
 from vehicle_controller.longitudinal_lqr import LongitudinalLQR
+from vehicle_controller.longitudinal_pid import LongitudinalPID
 from vehicle_controller.mpc_combined import MPCCombined
 from vehicle_controller.reference_manager import ReferenceManager
 from vehicle_controller.state_adapter import StateAdapter
@@ -36,15 +37,18 @@ class VehicleControllerNode(Node):
         self.declare_parameter("sygnal_state_topic", "/sygnal_state")
         self.declare_parameter("sygnal_fault_topic", "/sygnal_fault")
 
-        self.declare_parameter("controller.lateral", "mpc")
-        self.declare_parameter("controller.longitudinal", "lqr")
+        self.declare_parameter("controller.lateral", "kinematic_mpc")
+        self.declare_parameter("controller.longitudinal", "pid")
         self.declare_parameter("sim.dt", 0.10)
-        self.declare_parameter("sim.progress_window", 80)
+        self.declare_parameter("sim.progress_window", 5)
 
         self.declare_parameter("ref.path_file", default_path_file)
         self.declare_parameter("speed.mode", "constant")
-        self.declare_parameter("speed.constant_value", 10.0)
+        self.declare_parameter("speed.constant_value", 3.0)
         self.declare_parameter("speed.profile", "")
+        self.declare_parameter("speed.smoothing_enabled", True)
+        self.declare_parameter("speed.smoothing_accel_scale", 0.85)
+        self.declare_parameter("speed.initial_smoothed_value", 0.5)
 
         self.declare_parameter("accel_limits.a_max", 3.372)
         self.declare_parameter("accel_limits.a_min", -7.357)
@@ -54,7 +58,7 @@ class VehicleControllerNode(Node):
         self.declare_parameter("mpc_combined.R", [5.0, 0.5])
         self.declare_parameter("mpc_combined.Rd", [15.0, 2.0])
         self.declare_parameter("mpc_combined.kappa_ff_gain", 0.5)
-        self.declare_parameter("mpc_combined.max_steer", 0.6108652382)
+        self.declare_parameter("mpc_combined.max_steer", 0.3490658504)
         self.declare_parameter("mpc_combined.a_min", -7.357)
         self.declare_parameter("mpc_combined.a_max", 3.372)
 
@@ -63,21 +67,30 @@ class VehicleControllerNode(Node):
         self.declare_parameter("mpc.R", 5.0)
         self.declare_parameter("mpc.Rd", 15.0)
         self.declare_parameter("mpc.kappa_ff_gain", 0.5)
-        self.declare_parameter("mpc.max_steer", 0.6108652382)
+        self.declare_parameter("mpc.max_steer", 0.3490658504)
 
-        self.declare_parameter("kinematic_mpc.N", 25)
-        self.declare_parameter("kinematic_mpc.Q", [15.0, 12.0])
-        self.declare_parameter("kinematic_mpc.R", 5.0)
+        self.declare_parameter("kinematic_mpc.N", 16)
+        self.declare_parameter("kinematic_mpc.Q", [2.2, 0.8])
+        self.declare_parameter("kinematic_mpc.R", 25.0)
         self.declare_parameter("kinematic_mpc.Rd", 15.0)
-        self.declare_parameter("kinematic_mpc.kappa_ff_gain", 1.0)
-        self.declare_parameter("kinematic_mpc.max_steer", 0.6108652382)
+        self.declare_parameter("kinematic_mpc.kappa_ff_gain", 0.1)
+        self.declare_parameter("kinematic_mpc.max_steer", 0.3490658504)
+        self.declare_parameter("kinematic_mpc.fallback_k_e_y", 0.9)
+        self.declare_parameter("kinematic_mpc.fallback_k_e_psi", 1.4)
 
-        self.declare_parameter("lon_lqr.Q", [20.0, 10.0])
-        self.declare_parameter("lon_lqr.R", 0.4)
+        self.declare_parameter("lon_lqr.Q", [10.0, 3.0])
+        self.declare_parameter("lon_lqr.R", 1.5)
         self.declare_parameter("lon_lqr.a_min", -7.357)
         self.declare_parameter("lon_lqr.a_max", 3.372)
         self.declare_parameter("lon_lqr.int_error_min", -10.0)
         self.declare_parameter("lon_lqr.int_error_max", 10.0)
+        self.declare_parameter("lon_pid.kp", 1.6)
+        self.declare_parameter("lon_pid.ki", 0.0)
+        self.declare_parameter("lon_pid.kd", 0.0)
+        self.declare_parameter("lon_pid.a_min", -7.357)
+        self.declare_parameter("lon_pid.a_max", 3.372)
+        self.declare_parameter("lon_pid.int_error_min", -10.0)
+        self.declare_parameter("lon_pid.int_error_max", 10.0)
 
         self.declare_parameter("vehicle.mass", 1948.0)
         self.declare_parameter("vehicle.wheelbase", 2.720)
@@ -87,9 +100,12 @@ class VehicleControllerNode(Node):
         self.declare_parameter("vehicle.aero_a", 45.0)
         self.declare_parameter("vehicle.aero_b", 10.0)
         self.declare_parameter("vehicle.aero_c", 0.518)
-        self.declare_parameter("vehicle.max_steer", 0.6108652382)
-        self.declare_parameter("vehicle.max_steer_rate", 0.6981317008)
+        self.declare_parameter("vehicle.max_steer", 0.3490658504)
+        self.declare_parameter("vehicle.max_steer_rate", 0.2617993878)
         self.declare_parameter("vehicle.max_pedal_publish", 0.60)
+        self.declare_parameter("vehicle.sensor_offset_x", 1.14)
+        self.declare_parameter("vehicle.sensor_offset_y", 0.32)
+        self.declare_parameter("vehicle.sensor_offset_z", 0.0)
         self.declare_parameter("vehicle.tire.front.b", 9.5)
         self.declare_parameter("vehicle.tire.front.c", 1.30)
         self.declare_parameter("vehicle.tire.front.d", 8000.0)
@@ -107,10 +123,10 @@ class VehicleControllerNode(Node):
         self.declare_parameter("end_condition.max_lateral_error", 7.0)
         self.declare_parameter("end_condition.max_longitudinal_error", 7.0)
         self.declare_parameter("end_condition.goal_index_margin", 3)
-        self.declare_parameter("end_condition.goal_lateral_error", 3)
-        self.declare_parameter("end_condition.goal_longitudinal_error", 3)
+        self.declare_parameter("end_condition.goal_lateral_error", 2.0)
+        self.declare_parameter("end_condition.goal_longitudinal_error", 2.0)
         self.declare_parameter("end_condition.goal_heading_error", 0.0872664626)
-        self.declare_parameter("end_condition.goal_speed_threshold", 0.2)
+        self.declare_parameter("end_condition.goal_speed_threshold", 2.0)
 
         odom_topic = self.get_parameter("odom_topic").value
         imu_topic = self.get_parameter("imu_topic").value
@@ -129,9 +145,18 @@ class VehicleControllerNode(Node):
         speed_mode = self.get_parameter("speed.mode").value
         constant_speed = float(self.get_parameter("speed.constant_value").value)
         speed_profile = self.get_parameter("speed.profile").value
+        speed_smoothing_enabled = bool(self.get_parameter("speed.smoothing_enabled").value)
+        speed_smoothing_accel_scale = float(
+            self.get_parameter("speed.smoothing_accel_scale").value
+        )
+        speed_initial_smoothed_value = float(
+            self.get_parameter("speed.initial_smoothed_value").value
+        )
 
         accel_limit_max = float(self.get_parameter("accel_limits.a_max").value)
         accel_limit_min = float(self.get_parameter("accel_limits.a_min").value)
+        self.accel_limit_max = accel_limit_max
+        self.accel_limit_min = accel_limit_min
 
         mpc_horizon = int(self.get_parameter("mpc_combined.N").value)
         mpc_q = self.get_parameter("mpc_combined.Q").value
@@ -155,6 +180,12 @@ class VehicleControllerNode(Node):
         kin_mpc_rd = float(self.get_parameter("kinematic_mpc.Rd").value)
         kin_mpc_kappa_ff_gain = float(self.get_parameter("kinematic_mpc.kappa_ff_gain").value)
         kin_mpc_max_steer = float(self.get_parameter("kinematic_mpc.max_steer").value)
+        kin_mpc_fallback_k_e_y = float(
+            self.get_parameter("kinematic_mpc.fallback_k_e_y").value
+        )
+        kin_mpc_fallback_k_e_psi = float(
+            self.get_parameter("kinematic_mpc.fallback_k_e_psi").value
+        )
 
         lon_lqr_q = self.get_parameter("lon_lqr.Q").value
         lon_lqr_r = float(self.get_parameter("lon_lqr.R").value)
@@ -162,6 +193,13 @@ class VehicleControllerNode(Node):
         lon_lqr_a_max = float(self.get_parameter("lon_lqr.a_max").value)
         lon_lqr_int_error_min = float(self.get_parameter("lon_lqr.int_error_min").value)
         lon_lqr_int_error_max = float(self.get_parameter("lon_lqr.int_error_max").value)
+        lon_pid_kp = float(self.get_parameter("lon_pid.kp").value)
+        lon_pid_ki = float(self.get_parameter("lon_pid.ki").value)
+        lon_pid_kd = float(self.get_parameter("lon_pid.kd").value)
+        lon_pid_a_min = float(self.get_parameter("lon_pid.a_min").value)
+        lon_pid_a_max = float(self.get_parameter("lon_pid.a_max").value)
+        lon_pid_int_error_min = float(self.get_parameter("lon_pid.int_error_min").value)
+        lon_pid_int_error_max = float(self.get_parameter("lon_pid.int_error_max").value)
 
         vehicle_mass = float(self.get_parameter("vehicle.mass").value)
         vehicle_wheelbase = float(self.get_parameter("vehicle.wheelbase").value)
@@ -174,6 +212,9 @@ class VehicleControllerNode(Node):
         self.max_steer = float(self.get_parameter("vehicle.max_steer").value)
         self.max_steer_rate = float(self.get_parameter("vehicle.max_steer_rate").value)
         self.max_pedal_publish = float(self.get_parameter("vehicle.max_pedal_publish").value)
+        vehicle_sensor_offset_x = float(self.get_parameter("vehicle.sensor_offset_x").value)
+        vehicle_sensor_offset_y = float(self.get_parameter("vehicle.sensor_offset_y").value)
+        vehicle_sensor_offset_z = float(self.get_parameter("vehicle.sensor_offset_z").value)
         tire_front_calpha = float(self.get_parameter("vehicle.tire.front.calpha").value)
         tire_rear_calpha = float(self.get_parameter("vehicle.tire.rear.calpha").value)
         accel_map_file = self.get_parameter("vehicle.accel_map_file").value
@@ -195,6 +236,9 @@ class VehicleControllerNode(Node):
         self.goal_speed_threshold = float(
             self.get_parameter("end_condition.goal_speed_threshold").value
         )
+        self.speed_smoothing_enabled = speed_smoothing_enabled
+        self.speed_smoothing_accel_scale = speed_smoothing_accel_scale
+        self.speed_initial_smoothed_value = speed_initial_smoothed_value
 
         if mpc_a_min < accel_limit_min or mpc_a_max > accel_limit_max:
             raise ValueError(
@@ -202,13 +246,20 @@ class VehicleControllerNode(Node):
             )
         if lon_lqr_a_min < accel_limit_min or lon_lqr_a_max > accel_limit_max:
             raise ValueError("lon_lqr acceleration limits must stay within accel_limits bounds.")
+        if lon_pid_a_min < accel_limit_min or lon_pid_a_max > accel_limit_max:
+            raise ValueError("lon_pid acceleration limits must stay within accel_limits bounds.")
 
         self.control_mode = self._resolve_control_mode(
             controller_lateral=controller_lateral,
             controller_longitudinal=controller_longitudinal,
         )
 
-        self.state_adapter = StateAdapter(max_state_age_sec=max(4.0 * control_dt, 0.2))
+        self.state_adapter = StateAdapter(
+            max_state_age_sec=max(4.0 * control_dt, 0.2),
+            sensor_offset_x=vehicle_sensor_offset_x,
+            sensor_offset_y=vehicle_sensor_offset_y,
+            sensor_offset_z=vehicle_sensor_offset_z,
+        )
         self.reference_manager = ReferenceManager(
             path_file=path_file,
             speed_profile=speed_profile,
@@ -263,18 +314,33 @@ class VehicleControllerNode(Node):
                 kappa_ff_gain=kin_mpc_kappa_ff_gain,
                 max_steer=kin_mpc_max_steer,
                 wheelbase=vehicle_wheelbase,
+                fallback_k_e_y=kin_mpc_fallback_k_e_y,
+                fallback_k_e_psi=kin_mpc_fallback_k_e_psi,
             )
         else:
             raise ValueError(f"Unsupported lateral controller: {controller_lateral}")
-        self.longitudinal_controller = LongitudinalLQR(
-            initial_dt=control_dt,
-            q=lon_lqr_q,
-            r=lon_lqr_r,
-            a_min=lon_lqr_a_min,
-            a_max=lon_lqr_a_max,
-            int_error_min=lon_lqr_int_error_min,
-            int_error_max=lon_lqr_int_error_max,
-        )
+        if controller_longitudinal == "lqr":
+            self.longitudinal_controller = LongitudinalLQR(
+                initial_dt=control_dt,
+                q=lon_lqr_q,
+                r=lon_lqr_r,
+                a_min=lon_lqr_a_min,
+                a_max=lon_lqr_a_max,
+                int_error_min=lon_lqr_int_error_min,
+                int_error_max=lon_lqr_int_error_max,
+            )
+        elif controller_longitudinal == "pid":
+            self.longitudinal_controller = LongitudinalPID(
+                kp=lon_pid_kp,
+                ki=lon_pid_ki,
+                kd=lon_pid_kd,
+                a_min=lon_pid_a_min,
+                a_max=lon_pid_a_max,
+                int_error_min=lon_pid_int_error_min,
+                int_error_max=lon_pid_int_error_max,
+            )
+        else:
+            raise ValueError(f"Unsupported longitudinal controller: {controller_longitudinal}")
         self.actuator_mapper = ActuatorMapper(
             accel_map_file=accel_map_file,
             brake_map_file=brake_map_file,
@@ -309,7 +375,6 @@ class VehicleControllerNode(Node):
         self._last_wait_log_sec = 0.0
         self._prev_control_start_sec: float | None = None
         self._last_control_update_sec: float | None = None
-        self._controller_stopped = False
 
         self.get_logger().info(
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
@@ -365,25 +430,28 @@ class VehicleControllerNode(Node):
             self._throttled_wait_log(now_sec, "state data received but not fresh enough")
             return
 
-        if self._controller_stopped:
-            return
-
         if not self._should_update_control(now_sec):
             return
 
         control_update_dt = self._compute_control_update_dt(now_sec)
 
         meas = self.state_adapter.build_measured_state(self.memory)
-        ref_point = self.reference_manager.query(meas, idx_hint=self.memory.idx_progress)
+        idx_hint = self.memory.idx_progress if self.memory.has_reference_lock else None
+        ref_point = self.reference_manager.query(meas, idx_hint=idx_hint)
+        self.memory.has_reference_lock = True
         self.memory.idx_progress = max(self.memory.idx_progress, ref_point.idx)
+        ref_point.v_ref = self._smooth_reference_speed(ref_point.v_ref, meas.vx, control_update_dt)
         e_longitudinal = self._compute_longitudinal_error(meas.x, meas.y, ref_point.xr, ref_point.yr, ref_point.psi_ref)
 
         stop_reason = self._check_end_condition(ref_point, meas.vx, e_longitudinal)
         if stop_reason is not None:
-            self._stop_controller(stop_reason)
+            self._publish_zero_command()
+            self._publish_enable(False)
+            self.get_logger().info(stop_reason)
             return
 
-        self.memory.int_speed_error += (ref_point.v_ref - meas.vx) * control_update_dt
+        if self.control_mode != "mpc+pid" and self.control_mode != "kinematic_mpc+pid":
+            self.memory.int_speed_error += (ref_point.v_ref - meas.vx) * control_update_dt
 
         if self.control_mode == "mpc_combined":
             delta_cmd, accel_cmd = self.combined_controller.step(
@@ -491,15 +559,20 @@ class VehicleControllerNode(Node):
             return "mpc_combined"
         if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "lqr":
             return "mpc+lqr"
+        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "pid":
+            return "mpc+pid"
         if controller_lateral == "kinematic_mpc" and controller_longitudinal == "lqr":
             return "kinematic_mpc+lqr"
+        if controller_lateral == "kinematic_mpc" and controller_longitudinal == "pid":
+            return "kinematic_mpc+pid"
         raise ValueError(
             "Supported controller selections are "
             "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
             "'controller.longitudinal=mpc', "
             "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
-            "'controller.longitudinal=lqr', or "
-            "'controller.lateral=kinematic_mpc' with 'controller.longitudinal=lqr'."
+            "'controller.longitudinal=lqr' or 'controller.longitudinal=pid', or "
+            "'controller.lateral=kinematic_mpc' with 'controller.longitudinal=lqr' "
+            "or 'controller.longitudinal=pid'."
         )
 
     def _compute_actual_loop_dt(self, control_start_sec: float) -> float:
@@ -542,6 +615,26 @@ class VehicleControllerNode(Node):
             self.get_logger().info(text)
             self._last_wait_log_sec = now_sec
 
+    def _smooth_reference_speed(self, v_ref_raw: float, vx: float, dt: float) -> float:
+        v_ref_raw = max(float(v_ref_raw), 0.0)
+        if not self.speed_smoothing_enabled:
+            self.memory.v_ref_smooth = v_ref_raw
+            self.memory.has_speed_ref_lock = True
+            return v_ref_raw
+
+        if not self.memory.has_speed_ref_lock:
+            self.memory.v_ref_smooth = max(float(vx), self.speed_initial_smoothed_value, 0.0)
+            self.memory.has_speed_ref_lock = True
+
+        a_max_ref = self.speed_smoothing_accel_scale * self.accel_limit_max
+        a_min_ref = self.speed_smoothing_accel_scale * self.accel_limit_min
+        dv_desired = v_ref_raw - self.memory.v_ref_smooth
+        dv_max = a_max_ref * float(dt)
+        dv_min = a_min_ref * float(dt)
+        dv_clamped = min(max(dv_desired, dv_min), dv_max)
+        self.memory.v_ref_smooth = max(self.memory.v_ref_smooth + dv_clamped, 0.0)
+        return self.memory.v_ref_smooth
+
     @staticmethod
     def _compute_longitudinal_error(
         x: float, y: float, xr: float, yr: float, psi_ref: float
@@ -551,33 +644,21 @@ class VehicleControllerNode(Node):
         return math.cos(float(psi_ref)) * dx + math.sin(float(psi_ref)) * dy
 
     def _check_end_condition(self, ref_point, vx: float, e_longitudinal: float) -> str | None:
-        if abs(ref_point.e_y) > self.max_lateral_error:
-            return f"lateral error exceeded limit: {ref_point.e_y:.3f} m"
-        if abs(e_longitudinal) > self.max_longitudinal_error:
-            return f"longitudinal error exceeded limit: {e_longitudinal:.3f} m"
-
         final_ref_idx = len(self.reference_manager.ref.x) - 1
         near_goal = ref_point.idx >= max(final_ref_idx - self.goal_index_margin, 0)
-        if not near_goal:
-            return None
+        if near_goal:
+            if abs(ref_point.e_y) <= self.goal_lateral_error and \
+               abs(e_longitudinal) <= self.goal_longitudinal_error and \
+               abs(ref_point.e_psi) <= self.goal_heading_error and \
+               abs(float(vx)) <= self.goal_speed_threshold:
+                return "goal condition satisfied"
 
-        if abs(ref_point.e_y) > self.goal_lateral_error:
-            return None
-        if abs(e_longitudinal) > self.goal_longitudinal_error:
-            return None
-        if abs(ref_point.e_psi) > self.goal_heading_error:
-            return None
-        if abs(float(vx)) > self.goal_speed_threshold:
-            return None
-        return "goal condition satisfied"
-
-    def _stop_controller(self, reason: str) -> None:
-        if self._controller_stopped:
-            return
-        self._controller_stopped = True
-        self._publish_zero_command()
-        self._publish_enable(False)
-        self.get_logger().info(f"controller stopped: {reason}")
+        e_lateral = float(ref_point.e_y)
+        if abs(e_lateral) > self.max_lateral_error:
+            return f"lateral error exceeded limit: {e_lateral:.3f} m"
+        if abs(e_longitudinal) > self.max_longitudinal_error:
+            return f"longitudinal error exceeded limit: {e_longitudinal:.3f} m"
+        return None
 
     def _publish_record(
         self,
