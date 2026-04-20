@@ -38,7 +38,7 @@ CONTROLLER_RECORD_FIELDS = [
     "e_lateral",
     "e_heading",
     "steering_rad",
-    "steering_norm",
+    "steering_command",
     "accel_cmd",
     "throttle",
     "brake",
@@ -404,7 +404,7 @@ class VehicleControllerNode(Node):
         accel_cmd_exec = accel_cmd
         cmd, act_dbg = self._build_command(steering_exec, accel_cmd_exec, meas.vx)
         self.memory.last_steering_rad = steering_exec
-        self.memory.last_steering_norm = cmd.steering
+        self.memory.last_steering_command = cmd.steering
         self.memory.last_accel_cmd = cmd.accel_cmd
 
         msg = InterfaceCommand()
@@ -424,7 +424,7 @@ class VehicleControllerNode(Node):
 
         self.get_logger().debug(
             "x=%.3f y=%.3f yaw=%.3f vx=%.3f | idx=%d ey=%.3f epsi=%.3f vref=%.3f "
-            "steer_rad=%.3f steer_norm=%.3f ax_cmd=%.3f thr=%.3f brk=%.3f "
+            "steer_rad=%.3f steer_cmd=%.3f ax_cmd=%.3f thr=%.3f brk=%.3f "
             "f_resist=%.3f f_req=%.3f thr_pub=%.3f brk_pub=%.3f"
             % (
                 meas.x,

@@ -37,7 +37,7 @@ class ControllerMemory:
     last_speed_error: float = 0.0
     last_update_stamp_sec: float = 0.0
     last_steering_rad: float = 0.0
-    last_steering_norm: float = 0.0
+    last_steering_command: float = 0.0
     last_accel_cmd: float = 0.0
 
 

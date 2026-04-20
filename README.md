@@ -31,7 +31,7 @@ Outputs:
 `/command.command` layout:
 - `command[0]`: brake in `[0, 0.6]`
 - `command[1]`: throttle in `[0, 0.6]`
-- `command[2]`: steering in `[-1, 1]`
+- `command[2]`: steering command in radians, limited to `[-vehicle.max_steer, vehicle.max_steer]`
 - `command[3:7]`: reserved, currently zero
 
 `/enable.enable` semantics:
@@ -47,7 +47,7 @@ Outputs:
 - `data[7:11]`: `vx`, `vy`, `yaw_rate`, `ax`
 - `data[11:16]`: `xr`, `yr`, `psi_ref`, `kappa_ref`, `v_ref`
 - `data[16:19]`: `e_longitudinal`, `e_lateral`, `e_heading`
-- `data[19:24]`: `steering_rad`, `steering_norm`, `accel_cmd`, `throttle`, `brake`
+- `data[19:24]`: `steering_rad`, `steering_command`, `accel_cmd`, `throttle`, `brake`
 - `data[24:26]`: `f_resist`, `f_required`
 
 ## Controller flow
@@ -109,7 +109,7 @@ Important parameter groups:
 - `vehicle.*`: vehicle dimensions, steering limits, actuator files, and sensor offset
 - `vehicle.steering_sign`: final published steering sign
   and the current configuration uses `-1.0`, which means positive controller steering angle is
-  flipped before publish so the DBW interface receives right turn as positive and left turn as negative
+  flipped before publish while remaining in radians
 - `vehicle.max_pedal_publish`: DBW pedal ceiling, currently `0.60`
 - `timing.*`: measured `dt` clamp range for update logic
   and the minimum control update period
@@ -366,8 +366,7 @@ ros2 topic echo /enable
 ## Notes
 
 - Internal steering is kept in radians inside the controller.
-- Published steering is normalized to `[-1, 1]`, with positive values mapped directly from
-  positive steering radians.
+- Published steering is also in radians, with `vehicle.steering_sign` applied at publish time.
 - Internal longitudinal output is desired acceleration in `m/s^2`.
 - Published throttle and brake are normalized to `[0, 1]`.
 - Launch defaults come from `config/controller.yaml` and `config/vehicle_params.yaml`.

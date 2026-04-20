@@ -32,7 +32,7 @@ CONTROLLER_RECORD_COLUMNS = [
     "e_lateral",
     "e_heading",
     "steering_rad",
-    "steering_norm",
+    "steering_command",
     "accel_cmd",
     "throttle",
     "brake",

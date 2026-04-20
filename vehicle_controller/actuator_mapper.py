@@ -52,7 +52,7 @@ class ActuatorMapper:
         self, steering_cmd_rad: float, accel_cmd: float, vx: float
     ) -> tuple[ControlOutput, ActuatorDebug]:
         throttle, brake, debug = self._accel_to_normalized_pedals(accel_cmd, vx)
-        steering = self._normalize_steering(steering_cmd_rad)
+        steering = self._publish_steering_rad(steering_cmd_rad)
         command = ControlOutput(
             brake=brake,
             throttle=throttle,
@@ -124,11 +124,9 @@ class ActuatorMapper:
         )
         return float(throttle_cmd), float(brake_cmd), debug
 
-    def _normalize_steering(self, steering_cmd_rad: float) -> float:
-        steering_norm = (
-            self.steering_sign * float(steering_cmd_rad) / max(self.max_steer, 1e-6)
-        )
-        return self._clamp(steering_norm, -1.0, 1.0)
+    def _publish_steering_rad(self, steering_cmd_rad: float) -> float:
+        steering_rad = self.steering_sign * float(steering_cmd_rad)
+        return self._clamp(steering_rad, -self.max_steer, self.max_steer)
 
     def _update_actuator_mode(self, f_required: float) -> None:
         drive_enter = self.acc_map.force_min_effective
