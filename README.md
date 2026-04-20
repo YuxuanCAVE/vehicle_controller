@@ -7,13 +7,13 @@ https://github.com/YuxuanCAVE/Controller_GDP
 ROS 2 Python vehicle controller package for OxTS-based state input.
 
 Current controller stack:
-- combined MPC for steering and acceleration tracking
-- lateral MPC or kinematic lateral MPC with longitudinal PID or LQR as alternative runtime modes
+- lateral KBM-based NMPC for steering tracking
+- longitudinal PID for speed tracking
 - 1D lookup-table-based throttle/brake mapping with linear interpolation
 - sensor-position compensation from the OxTS measurement point to the vehicle control point
 - dynamic update `dt` for control, integral, and rate-limit logic
 - ROS2 record topic for vehicle state, dynamics, and tracking errors
-- normalized command output plus controller enable topic
+- DBW command output plus controller enable topic
 
 ## Topics
 
@@ -29,8 +29,8 @@ Outputs:
 - `/controller_record` (`std_msgs/msg/Float32MultiArray`)
 
 `/command.command` layout:
-- `command[0]`: brake in `[0, 1]`
-- `command[1]`: throttle in `[0, 1]`
+- `command[0]`: brake in `[0, 0.6]`
+- `command[1]`: throttle in `[0, 0.6]`
 - `command[2]`: steering in `[-1, 1]`
 - `command[3:7]`: reserved, currently zero
 
@@ -56,16 +56,21 @@ The runtime path is:
 
 1. Read odometry and IMU from OxTS topics.
 2. Convert the OxTS position to the vehicle control point using `p_center = P + R * t`.
-3. Find the nearest reference point. The first query is global; later queries use a local progress window.
-4. Smooth the reference speed in time when speed smoothing is enabled.
-5. Compute control with either combined `mpc + mpc` or decoupled lateral + longitudinal control using the actual loop `dt`.
-6. Apply steering rate limit.
-7. Map the final acceleration command to normalized throttle/brake using 1D actuator lookup tables.
-8. Publish command and enable topics.
+3. Convert the OxTS linear velocity to the controller point using rigid-body compensation.
+4. Find the nearest reference point. The first query is global; later queries use a local progress window.
+   The current implementation matches MATLAB by selecting the nearest waypoint index directly.
+5. Smooth the reference speed in time when speed smoothing is enabled.
+6. Compute steering with lateral NMPC-KBM and acceleration with longitudinal PID.
+7. Apply steering angle and steering-rate limits.
+8. Map the final acceleration command to throttle/brake using 1D actuator lookup tables.
+   The published throttle and brake are the actual DBW pedal requests, capped by
+   `vehicle.max_pedal_publish`, without a second normalization step.
+9. Publish command and enable topics.
 
-The ROS runtime is aligned with the current MATLAB closed-loop structure for the active controller
-and actuator chain. The controller initializes with `sim.dt = 0.10` and then updates the loop `dt`
-from the actual control callback timing.
+The ROS runtime is aligned with the current MATLAB controller and actuator chain, but is used for
+real-vehicle topic I/O rather than closed-loop simulation. The controller initializes with
+`sim.dt = 0.10` for the first control step, then updates the loop `dt` from the actual control
+callback timing from the second step onward.
 The MPC, integral update, and steering rate-limit logic all use this floating loop `dt`,
 with clamping:
 - `timing.dt_min`
@@ -77,16 +82,13 @@ To avoid running the control law faster than intended, the node also enforces
 skips command publication and only recomputes and publishes a new command when the minimum
 period elapses.
 
-The ROS runtime parameters are now aligned with the newer MATLAB config naming:
+The ROS runtime parameters are now aligned with the current MATLAB config naming:
 - `controller.*`
 - `sim.*`
 - `ref.*`
 - `speed.*`
-- `mpc_combined.*`
-- `mpc.*`
-- `kinematic_mpc.*`
+- `nmpc_kbm.*`
 - `lon_pid.*`
-- `lon_lqr.*`
 - `accel_limits.*`
 - `vehicle.*`
 
@@ -97,19 +99,18 @@ Main configuration file:
 - `config/vehicle_params.yaml`
 
 Important parameter groups:
-- `controller.*`: choose `lateral=mpc, longitudinal=mpc`, `lateral=mpc, longitudinal=lqr`,
-  `lateral=mpc, longitudinal=pid`, `lateral=kinematic_mpc, longitudinal=lqr`, or
-  `lateral=kinematic_mpc, longitudinal=pid`
+- `controller.*`: current supported stack is `lateral=nmpc_kbm` with `longitudinal=pid`
 - `sim.*`: initial control-loop dt and reference search window
 - `ref.*`: reference path location
 - `speed.*`: constant speed or profile configuration plus optional reference-speed smoothing
-- `mpc_combined.*`: combined controller horizon and Q/R/Rd weights
-- `mpc.*`: lateral MPC horizon and weights
-- `kinematic_mpc.*`: kinematic lateral MPC horizon and weights
+- `nmpc_kbm.*`: lateral NMPC horizon and weights
 - `lon_pid.*`: longitudinal PID gains and acceleration limits
-- `lon_lqr.*`: longitudinal LQR weights and acceleration limits
 - `accel_limits.*`: MATLAB-synced acceleration bounds from actuator maps
 - `vehicle.*`: vehicle dimensions, steering limits, actuator files, and sensor offset
+- `vehicle.steering_sign`: final published steering sign
+  and the current configuration uses `-1.0`, which means positive controller steering angle is
+  flipped before publish so the DBW interface receives right turn as positive and left turn as negative
+- `vehicle.max_pedal_publish`: DBW pedal ceiling, currently `0.60`
 - `timing.*`: measured `dt` clamp range for update logic
   and the minimum control update period
 - `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
@@ -195,6 +196,11 @@ At startup, the reference match is found globally. Once the controller locks ont
 switches back to local-window tracking using `sim.progress_window`. This allows the runtime to start
 correctly even when the vehicle is not physically located near reference index `0`.
 
+The current nearest-point logic follows the MATLAB implementation style:
+- choose the nearest waypoint index directly
+- use that waypoint as the reference point
+- compute the reference heading from neighboring waypoints
+
 ## End Condition
 
 The controller now has two explicit stop conditions:
@@ -218,39 +224,37 @@ The default goal thresholds are:
 
 ## Recording
 
-The node now publishes `/controller_record` for logging with ROS2 bags instead of writing CSV files
-itself. This keeps the workflow aligned with standard `ros2 bag record` output, which is stored as
-`.db3`.
+The node publishes `/controller_record` for logging, and the launch file now starts bag recording
+automatically by default. Each run creates a new timestamped bag directory, so previous experiments
+are not overwritten.
 
-Example:
-
-```bash
-ros2 bag record \
-  /ins/odometry \
-  /ins/imu \
-  /ins/nav_sat_fix \
-  /ins/nav_sat_ref \
-  /sygnal_state \
-  /sygnal_fault \
-  /command \
-  /enable \
-  /controller_record \
-  /tf \
-  /tf_static \
-  --output output_path
-```
-
-You can also use the helper script:
+Default behavior:
 
 ```bash
-bash scripts/record_vehicle_bag.sh cave_runs_record
+ros2 launch vehicle_controller vehicle_controller.launch.py
 ```
 
-The script treats `output_path` as a base name and appends a timestamp suffix, so repeated runs do
-not overwrite earlier recordings. For example, `output_path` becomes
-`output_path_20260414_153000`.
+This will:
+- start the controller node
+- start `ros2 bag record`
+- save the bag under `bags/vehicle_controller_YYYYMMDD_HHMMSS` when launched from the source tree
+- otherwise save under `<current_working_directory>/bags/vehicle_controller_YYYYMMDD_HHMMSS`
+- export `/controller_record` to `controller_record.csv` inside that same bag directory after the
+  recording process stops
 
-To expand `/controller_record` into a CSV with column headers after recording:
+You can disable automatic recording if needed:
+
+```bash
+ros2 launch vehicle_controller vehicle_controller.launch.py record:=false
+```
+
+You can also override the output root:
+
+```bash
+ros2 launch vehicle_controller vehicle_controller.launch.py record_root:=/path/to/bags
+```
+
+If you want to export a bag manually, the helper is still available:
 
 ```bash
 python3 scripts/export_controller_record_csv.py /path/to/bag_dir
@@ -261,6 +265,12 @@ destination:
 
 ```bash
 python3 scripts/export_controller_record_csv.py /path/to/bag_dir --output /tmp/controller_record.csv
+```
+
+To find the latest experiment quickly from the source tree:
+
+```bash
+ls -dt bags/vehicle_controller_* | head -n 1
 ```
 
 To estimate a reasonable `sim.progress_window` from the reference path spacing:
@@ -279,13 +289,74 @@ colcon build --packages-select vehicle_controller
 source install/setup.bash
 ```
 
+If you only changed YAML or launch parameters, you do not need to rebuild. Restart the launch is
+enough. Rebuild is only needed after Python package layout changes or install-space data changes.
+
 ## Run
 
 ```bash
 ros2 launch vehicle_controller vehicle_controller.launch.py
 ```
 
+Run with a custom bag output root:
+
+```bash
+ros2 launch vehicle_controller vehicle_controller.launch.py record_root:=/home/yuxuan/test_bags
+```
+
+Run without automatic bag recording:
+
+```bash
+ros2 launch vehicle_controller vehicle_controller.launch.py record:=false
+```
+
+Run after only changing YAML:
+
+```bash
+cd ~/ros_ws
+source install/setup.bash
+ros2 launch vehicle_controller vehicle_controller.launch.py
+```
+
 ## Quick checks
+
+Check that the node is alive:
+
+```bash
+ros2 node list | grep vehicle_controller
+```
+
+Check command output:
+
+```bash
+ros2 topic echo /command
+```
+
+Check controller record stream:
+
+```bash
+ros2 topic echo /controller_record
+```
+
+Check odometry rate:
+
+```bash
+ros2 topic hz /ins/odometry
+```
+
+Check IMU rate:
+
+```bash
+ros2 topic hz /ins/imu
+```
+
+Foxglove is a good choice for live monitoring during experiments. The most useful topics to watch
+live are:
+- `/ins/odometry`
+- `/ins/imu`
+- `/command`
+- `/enable`
+- `/controller_record`
 
 ```bash
 ros2 topic echo /command

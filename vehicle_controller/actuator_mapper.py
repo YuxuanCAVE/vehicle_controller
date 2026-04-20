@@ -25,6 +25,7 @@ class ActuatorMapper:
         accel_map_file: str,
         brake_map_file: str,
         max_steer: float,
+        steering_sign: float,
         mass: float,
         aero_a: float,
         aero_b: float,
@@ -34,6 +35,7 @@ class ActuatorMapper:
         self.accel_map_file = Path(accel_map_file)
         self.brake_map_file = Path(brake_map_file)
         self.max_steer = float(max_steer)
+        self.steering_sign = 1.0 if float(steering_sign) >= 0.0 else -1.0
         self.mass = float(mass)
         self.aero_a = float(aero_a)
         self.aero_b = float(aero_b)
@@ -103,8 +105,11 @@ class ActuatorMapper:
             f_drive_actual = -self._eval_force_map_1d(brk_internal, self.brake_map)
             branch_mode = -1.0
 
-        throttle_norm = throttle_publish / max(self.max_pedal_publish, 1e-6)
-        brake_norm = brake_publish / max(self.max_pedal_publish, 1e-6)
+        # Publish the lookup-map result directly.
+        # The DBW command uses the actual pedal request, capped by max_pedal_publish,
+        # rather than a second normalization back to [0, 1].
+        throttle_cmd = throttle_publish
+        brake_cmd = brake_publish
         debug = ActuatorDebug(
             f_resist=float(f_resist),
             f_required=float(f_required),
@@ -112,15 +117,17 @@ class ActuatorMapper:
             brk_req=float(brk_req),
             throttle_publish=float(throttle_publish),
             brake_publish=float(brake_publish),
-            throttle_norm=float(throttle_norm),
-            brake_norm=float(brake_norm),
+            throttle_norm=float(throttle_cmd),
+            brake_norm=float(brake_cmd),
             f_drive_actual=float(f_drive_actual),
             branch_mode=float(branch_mode),
         )
-        return float(throttle_norm), float(brake_norm), debug
+        return float(throttle_cmd), float(brake_cmd), debug
 
     def _normalize_steering(self, steering_cmd_rad: float) -> float:
-        steering_norm = float(steering_cmd_rad) / max(self.max_steer, 1e-6)
+        steering_norm = (
+            self.steering_sign * float(steering_cmd_rad) / max(self.max_steer, 1e-6)
+        )
         return self._clamp(steering_norm, -1.0, 1.0)
 
     def _update_actuator_mode(self, f_required: float) -> None:
@@ -188,11 +195,12 @@ class ActuatorMapper:
         acc_force = acc_force[order]
         acc_force, force_unique_idx = np.unique(acc_force, return_index=True)
         acc_cmd = acc_cmd[force_unique_idx]
+        acc_cmd, acc_force = self._add_zero_anchor(acc_cmd, acc_force)
 
-        cmd_min = float(np.min(acc_cmd_raw))
+        cmd_min = 0.0
         cmd_max = float(np.max(acc_cmd))
-        cmd_min_effective = cmd_min
-        force_min_effective = self._interp_extrap(acc_cmd, acc_force, cmd_min_effective)
+        cmd_min_effective = 0.0
+        force_min_effective = 0.0
 
         return _LookupMap1D(
             cmd_full=acc_cmd,
@@ -201,7 +209,7 @@ class ActuatorMapper:
             cmd_max=cmd_max,
             cmd_min_effective=cmd_min_effective,
             force_min_effective=float(force_min_effective),
-            force_exit_coast=float(0.5 * force_min_effective),
+            force_exit_coast=0.0,
         )
 
     def _load_brake_map(self, path: Path) -> _LookupMap1D:
@@ -227,11 +235,12 @@ class ActuatorMapper:
         brk_force = brk_force[order]
         brk_cmd, cmd_unique_idx = np.unique(brk_cmd, return_index=True)
         brk_force = brk_force[cmd_unique_idx]
+        brk_cmd, brk_force = self._add_zero_anchor(brk_cmd, brk_force)
 
-        cmd_min = float(np.min(brk_cmd_raw))
+        cmd_min = 0.0
         cmd_max = float(np.max(brk_cmd))
-        cmd_min_effective = cmd_min
-        force_min_effective = self._interp_extrap(brk_cmd, brk_force, cmd_min_effective)
+        cmd_min_effective = 0.0
+        force_min_effective = 0.0
 
         return _LookupMap1D(
             cmd_full=brk_cmd,
@@ -240,7 +249,7 @@ class ActuatorMapper:
             cmd_max=cmd_max,
             cmd_min_effective=cmd_min_effective,
             force_min_effective=float(force_min_effective),
-            force_exit_coast=float(0.5 * force_min_effective),
+            force_exit_coast=0.0,
         )
 
     @staticmethod
@@ -285,6 +294,33 @@ class ActuatorMapper:
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:
         return max(min(float(value), float(upper)), float(lower))
+
+    @staticmethod
+    def _add_zero_anchor(cmd_axis: np.ndarray, force_axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        cmd_axis = np.asarray(cmd_axis, dtype=float).reshape(-1)
+        force_axis = np.asarray(force_axis, dtype=float).reshape(-1)
+        if cmd_axis.size != force_axis.size:
+            raise ValueError("Command and force arrays must have the same length.")
+
+        order = np.argsort(cmd_axis)
+        cmd_axis = cmd_axis[order]
+        force_axis = force_axis[order]
+        cmd_axis, unique_idx = np.unique(cmd_axis, return_index=True)
+        force_axis = force_axis[unique_idx]
+
+        if cmd_axis.size == 0:
+            return np.array([0.0], dtype=float), np.array([0.0], dtype=float)
+
+        if cmd_axis[0] > 0.0:
+            cmd_axis = np.concatenate((np.array([0.0]), cmd_axis))
+            force_axis = np.concatenate((np.array([0.0]), force_axis))
+        else:
+            cmd_axis = cmd_axis.copy()
+            force_axis = force_axis.copy()
+            cmd_axis[0] = 0.0
+            force_axis[0] = 0.0
+
+        return cmd_axis, force_axis
 
 
 def _get_first_existing_field(mat_data: dict, field_names: Iterable[str]):

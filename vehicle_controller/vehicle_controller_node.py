@@ -6,18 +6,45 @@ from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 from sygnal_msgs.msg import FaultState, InterfaceCommand, InterfaceEnable, State
 
 from vehicle_controller.actuator_mapper import ActuatorMapper
-from vehicle_controller.kinematic_lateral_mpc import KinematicLateralMPC
-from vehicle_controller.lateral_mpc import LateralMPC
-from vehicle_controller.longitudinal_lqr import LongitudinalLQR
 from vehicle_controller.longitudinal_pid import LongitudinalPID
-from vehicle_controller.mpc_combined import MPCCombined
+from vehicle_controller.nmpc_kbm_lateral import NMPCKBMLateral
 from vehicle_controller.reference_manager import ReferenceManager
 from vehicle_controller.state_adapter import StateAdapter
 from vehicle_controller.types import ControllerMemory
+
+
+CONTROLLER_RECORD_FIELDS = [
+    "stamp_sec",
+    "actual_loop_dt",
+    "control_update_dt",
+    "ref_idx",
+    "x",
+    "y",
+    "yaw",
+    "vx",
+    "vy",
+    "yaw_rate",
+    "ax",
+    "xr",
+    "yr",
+    "psi_ref",
+    "kappa_ref",
+    "v_ref",
+    "e_longitudinal",
+    "e_lateral",
+    "e_heading",
+    "steering_rad",
+    "steering_norm",
+    "accel_cmd",
+    "throttle",
+    "brake",
+    "f_resist",
+    "f_required",
+]
 
 
 class VehicleControllerNode(Node):
@@ -25,6 +52,7 @@ class VehicleControllerNode(Node):
         super().__init__("vehicle_controller")
 
         package_share_dir = Path(get_package_share_directory("vehicle_controller"))
+        package_source_dir = Path(__file__).resolve().parents[1]
         default_path_file = str(package_share_dir / "data" / "path_ref.mat")
         default_accel_map_file = str(package_share_dir / "data" / "Acc_mapData_noSlope.mat")
         default_brake_map_file = str(package_share_dir / "data" / "brake_mapData_noSlope.mat")
@@ -37,7 +65,7 @@ class VehicleControllerNode(Node):
         self.declare_parameter("sygnal_state_topic", "/sygnal_state")
         self.declare_parameter("sygnal_fault_topic", "/sygnal_fault")
 
-        self.declare_parameter("controller.lateral", "kinematic_mpc")
+        self.declare_parameter("controller.lateral", "nmpc_kbm")
         self.declare_parameter("controller.longitudinal", "pid")
         self.declare_parameter("sim.dt", 0.10)
         self.declare_parameter("sim.progress_window", 5)
@@ -53,37 +81,15 @@ class VehicleControllerNode(Node):
         self.declare_parameter("accel_limits.a_max", 3.372)
         self.declare_parameter("accel_limits.a_min", -7.357)
 
-        self.declare_parameter("mpc_combined.N", 25)
-        self.declare_parameter("mpc_combined.Q", [15.0, 12.0, 8.0, 10.0, 8.0, 20.0])
-        self.declare_parameter("mpc_combined.R", [5.0, 0.5])
-        self.declare_parameter("mpc_combined.Rd", [15.0, 2.0])
-        self.declare_parameter("mpc_combined.kappa_ff_gain", 0.5)
-        self.declare_parameter("mpc_combined.max_steer", 0.3490658504)
-        self.declare_parameter("mpc_combined.a_min", -7.357)
-        self.declare_parameter("mpc_combined.a_max", 3.372)
+        self.declare_parameter("nmpc_kbm.N", 5)
+        self.declare_parameter("nmpc_kbm.q_x", 32.0)
+        self.declare_parameter("nmpc_kbm.q_y", 32.0)
+        self.declare_parameter("nmpc_kbm.q_psi", 4.0)
+        self.declare_parameter("nmpc_kbm.r_delta", 32.0)
+        self.declare_parameter("nmpc_kbm.r_du", 32.0)
+        self.declare_parameter("nmpc_kbm.max_iterations", 100)
+        self.declare_parameter("nmpc_kbm.max_fun_evals", 4000)
 
-        self.declare_parameter("mpc.N", 25)
-        self.declare_parameter("mpc.Q", [15.0, 12.0, 8.0, 10.0])
-        self.declare_parameter("mpc.R", 5.0)
-        self.declare_parameter("mpc.Rd", 15.0)
-        self.declare_parameter("mpc.kappa_ff_gain", 0.5)
-        self.declare_parameter("mpc.max_steer", 0.3490658504)
-
-        self.declare_parameter("kinematic_mpc.N", 16)
-        self.declare_parameter("kinematic_mpc.Q", [2.2, 0.8])
-        self.declare_parameter("kinematic_mpc.R", 25.0)
-        self.declare_parameter("kinematic_mpc.Rd", 15.0)
-        self.declare_parameter("kinematic_mpc.kappa_ff_gain", 0.1)
-        self.declare_parameter("kinematic_mpc.max_steer", 0.3490658504)
-        self.declare_parameter("kinematic_mpc.fallback_k_e_y", 0.9)
-        self.declare_parameter("kinematic_mpc.fallback_k_e_psi", 1.4)
-
-        self.declare_parameter("lon_lqr.Q", [10.0, 3.0])
-        self.declare_parameter("lon_lqr.R", 1.5)
-        self.declare_parameter("lon_lqr.a_min", -7.357)
-        self.declare_parameter("lon_lqr.a_max", 3.372)
-        self.declare_parameter("lon_lqr.int_error_min", -10.0)
-        self.declare_parameter("lon_lqr.int_error_max", 10.0)
         self.declare_parameter("lon_pid.kp", 1.6)
         self.declare_parameter("lon_pid.ki", 0.0)
         self.declare_parameter("lon_pid.kd", 0.0)
@@ -94,26 +100,17 @@ class VehicleControllerNode(Node):
 
         self.declare_parameter("vehicle.mass", 1948.0)
         self.declare_parameter("vehicle.wheelbase", 2.720)
-        self.declare_parameter("vehicle.lf", 1.214)
         self.declare_parameter("vehicle.lr", 1.506)
-        self.declare_parameter("vehicle.iz", 2500.0)
         self.declare_parameter("vehicle.aero_a", 45.0)
         self.declare_parameter("vehicle.aero_b", 10.0)
         self.declare_parameter("vehicle.aero_c", 0.518)
         self.declare_parameter("vehicle.max_steer", 0.3490658504)
         self.declare_parameter("vehicle.max_steer_rate", 0.2617993878)
+        self.declare_parameter("vehicle.steering_sign", -1.0)
         self.declare_parameter("vehicle.max_pedal_publish", 0.60)
         self.declare_parameter("vehicle.sensor_offset_x", 1.14)
         self.declare_parameter("vehicle.sensor_offset_y", 0.32)
         self.declare_parameter("vehicle.sensor_offset_z", 0.0)
-        self.declare_parameter("vehicle.tire.front.b", 9.5)
-        self.declare_parameter("vehicle.tire.front.c", 1.30)
-        self.declare_parameter("vehicle.tire.front.d", 8000.0)
-        self.declare_parameter("vehicle.tire.front.calpha", 98800.0)
-        self.declare_parameter("vehicle.tire.rear.b", 10.5)
-        self.declare_parameter("vehicle.tire.rear.c", 1.30)
-        self.declare_parameter("vehicle.tire.rear.d", 8500.0)
-        self.declare_parameter("vehicle.tire.rear.calpha", 116025.0)
         self.declare_parameter("vehicle.accel_map_file", default_accel_map_file)
         self.declare_parameter("vehicle.brake_map_file", default_brake_map_file)
 
@@ -141,7 +138,11 @@ class VehicleControllerNode(Node):
         control_dt = float(self.get_parameter("sim.dt").value)
         progress_window = int(self.get_parameter("sim.progress_window").value)
 
-        path_file = self.get_parameter("ref.path_file").value
+        path_file = self._resolve_param_path(
+            self.get_parameter("ref.path_file").value,
+            package_share_dir=package_share_dir,
+            package_source_dir=package_source_dir,
+        )
         speed_mode = self.get_parameter("speed.mode").value
         constant_speed = float(self.get_parameter("speed.constant_value").value)
         speed_profile = self.get_parameter("speed.profile").value
@@ -158,41 +159,15 @@ class VehicleControllerNode(Node):
         self.accel_limit_max = accel_limit_max
         self.accel_limit_min = accel_limit_min
 
-        mpc_horizon = int(self.get_parameter("mpc_combined.N").value)
-        mpc_q = self.get_parameter("mpc_combined.Q").value
-        mpc_r = self.get_parameter("mpc_combined.R").value
-        mpc_rd = self.get_parameter("mpc_combined.Rd").value
-        mpc_kappa_ff_gain = float(self.get_parameter("mpc_combined.kappa_ff_gain").value)
-        mpc_max_steer = float(self.get_parameter("mpc_combined.max_steer").value)
-        mpc_a_min = float(self.get_parameter("mpc_combined.a_min").value)
-        mpc_a_max = float(self.get_parameter("mpc_combined.a_max").value)
+        nmpc_horizon = int(self.get_parameter("nmpc_kbm.N").value)
+        nmpc_q_x = float(self.get_parameter("nmpc_kbm.q_x").value)
+        nmpc_q_y = float(self.get_parameter("nmpc_kbm.q_y").value)
+        nmpc_q_psi = float(self.get_parameter("nmpc_kbm.q_psi").value)
+        nmpc_r_delta = float(self.get_parameter("nmpc_kbm.r_delta").value)
+        nmpc_r_du = float(self.get_parameter("nmpc_kbm.r_du").value)
+        nmpc_max_iterations = int(self.get_parameter("nmpc_kbm.max_iterations").value)
+        nmpc_max_fun_evals = int(self.get_parameter("nmpc_kbm.max_fun_evals").value)
 
-        lat_mpc_horizon = int(self.get_parameter("mpc.N").value)
-        lat_mpc_q = self.get_parameter("mpc.Q").value
-        lat_mpc_r = float(self.get_parameter("mpc.R").value)
-        lat_mpc_rd = float(self.get_parameter("mpc.Rd").value)
-        lat_mpc_kappa_ff_gain = float(self.get_parameter("mpc.kappa_ff_gain").value)
-        lat_mpc_max_steer = float(self.get_parameter("mpc.max_steer").value)
-
-        kin_mpc_horizon = int(self.get_parameter("kinematic_mpc.N").value)
-        kin_mpc_q = self.get_parameter("kinematic_mpc.Q").value
-        kin_mpc_r = float(self.get_parameter("kinematic_mpc.R").value)
-        kin_mpc_rd = float(self.get_parameter("kinematic_mpc.Rd").value)
-        kin_mpc_kappa_ff_gain = float(self.get_parameter("kinematic_mpc.kappa_ff_gain").value)
-        kin_mpc_max_steer = float(self.get_parameter("kinematic_mpc.max_steer").value)
-        kin_mpc_fallback_k_e_y = float(
-            self.get_parameter("kinematic_mpc.fallback_k_e_y").value
-        )
-        kin_mpc_fallback_k_e_psi = float(
-            self.get_parameter("kinematic_mpc.fallback_k_e_psi").value
-        )
-
-        lon_lqr_q = self.get_parameter("lon_lqr.Q").value
-        lon_lqr_r = float(self.get_parameter("lon_lqr.R").value)
-        lon_lqr_a_min = float(self.get_parameter("lon_lqr.a_min").value)
-        lon_lqr_a_max = float(self.get_parameter("lon_lqr.a_max").value)
-        lon_lqr_int_error_min = float(self.get_parameter("lon_lqr.int_error_min").value)
-        lon_lqr_int_error_max = float(self.get_parameter("lon_lqr.int_error_max").value)
         lon_pid_kp = float(self.get_parameter("lon_pid.kp").value)
         lon_pid_ki = float(self.get_parameter("lon_pid.ki").value)
         lon_pid_kd = float(self.get_parameter("lon_pid.kd").value)
@@ -203,22 +178,27 @@ class VehicleControllerNode(Node):
 
         vehicle_mass = float(self.get_parameter("vehicle.mass").value)
         vehicle_wheelbase = float(self.get_parameter("vehicle.wheelbase").value)
-        vehicle_lf = float(self.get_parameter("vehicle.lf").value)
         vehicle_lr = float(self.get_parameter("vehicle.lr").value)
-        vehicle_iz = float(self.get_parameter("vehicle.iz").value)
         vehicle_aero_a = float(self.get_parameter("vehicle.aero_a").value)
         vehicle_aero_b = float(self.get_parameter("vehicle.aero_b").value)
         vehicle_aero_c = float(self.get_parameter("vehicle.aero_c").value)
         self.max_steer = float(self.get_parameter("vehicle.max_steer").value)
         self.max_steer_rate = float(self.get_parameter("vehicle.max_steer_rate").value)
+        vehicle_steering_sign = float(self.get_parameter("vehicle.steering_sign").value)
         self.max_pedal_publish = float(self.get_parameter("vehicle.max_pedal_publish").value)
         vehicle_sensor_offset_x = float(self.get_parameter("vehicle.sensor_offset_x").value)
         vehicle_sensor_offset_y = float(self.get_parameter("vehicle.sensor_offset_y").value)
         vehicle_sensor_offset_z = float(self.get_parameter("vehicle.sensor_offset_z").value)
-        tire_front_calpha = float(self.get_parameter("vehicle.tire.front.calpha").value)
-        tire_rear_calpha = float(self.get_parameter("vehicle.tire.rear.calpha").value)
-        accel_map_file = self.get_parameter("vehicle.accel_map_file").value
-        brake_map_file = self.get_parameter("vehicle.brake_map_file").value
+        accel_map_file = self._resolve_param_path(
+            self.get_parameter("vehicle.accel_map_file").value,
+            package_share_dir=package_share_dir,
+            package_source_dir=package_source_dir,
+        )
+        brake_map_file = self._resolve_param_path(
+            self.get_parameter("vehicle.brake_map_file").value,
+            package_share_dir=package_share_dir,
+            package_source_dir=package_source_dir,
+        )
 
         self.dt_update_min = float(self.get_parameter("timing.dt_min").value)
         self.dt_update_max = float(self.get_parameter("timing.dt_max").value)
@@ -240,12 +220,6 @@ class VehicleControllerNode(Node):
         self.speed_smoothing_accel_scale = speed_smoothing_accel_scale
         self.speed_initial_smoothed_value = speed_initial_smoothed_value
 
-        if mpc_a_min < accel_limit_min or mpc_a_max > accel_limit_max:
-            raise ValueError(
-                "mpc_combined acceleration limits must stay within accel_limits bounds."
-            )
-        if lon_lqr_a_min < accel_limit_min or lon_lqr_a_max > accel_limit_max:
-            raise ValueError("lon_lqr acceleration limits must stay within accel_limits bounds.")
         if lon_pid_a_min < accel_limit_min or lon_pid_a_max > accel_limit_max:
             raise ValueError("lon_pid acceleration limits must stay within accel_limits bounds.")
 
@@ -269,82 +243,37 @@ class VehicleControllerNode(Node):
         )
         self.memory = ControllerMemory()
 
-        self.combined_controller = MPCCombined(
+        self.lateral_controller = NMPCKBMLateral(
             initial_dt=control_dt,
-            horizon=mpc_horizon,
-            q=mpc_q,
-            r=mpc_r,
-            rd=mpc_rd,
-            kappa_ff_gain=mpc_kappa_ff_gain,
-            max_steer=mpc_max_steer,
-            a_min=mpc_a_min,
-            a_max=mpc_a_max,
+            horizon=nmpc_horizon,
+            q_x=nmpc_q_x,
+            q_y=nmpc_q_y,
+            q_psi=nmpc_q_psi,
+            r_delta=nmpc_r_delta,
+            r_du=nmpc_r_du,
+            max_steer=self.max_steer,
             wheelbase=vehicle_wheelbase,
-            mass=vehicle_mass,
-            iz=vehicle_iz,
-            lf=vehicle_lf,
             lr=vehicle_lr,
-            cf=tire_front_calpha,
-            cr=tire_rear_calpha,
+            delta_rate_max=self.max_steer_rate,
+            max_iterations=nmpc_max_iterations,
+            max_fun_evals=nmpc_max_fun_evals,
         )
-        if controller_lateral in {"mpc", "dynamic_mpc"}:
-            self.lateral_controller = LateralMPC(
-                initial_dt=control_dt,
-                horizon=lat_mpc_horizon,
-                q=lat_mpc_q,
-                r=lat_mpc_r,
-                rd=lat_mpc_rd,
-                kappa_ff_gain=lat_mpc_kappa_ff_gain,
-                max_steer=lat_mpc_max_steer,
-                wheelbase=vehicle_wheelbase,
-                mass=vehicle_mass,
-                iz=vehicle_iz,
-                lf=vehicle_lf,
-                lr=vehicle_lr,
-                cf=tire_front_calpha,
-                cr=tire_rear_calpha,
-            )
-        elif controller_lateral == "kinematic_mpc":
-            self.lateral_controller = KinematicLateralMPC(
-                initial_dt=control_dt,
-                horizon=kin_mpc_horizon,
-                q=kin_mpc_q,
-                r=kin_mpc_r,
-                rd=kin_mpc_rd,
-                kappa_ff_gain=kin_mpc_kappa_ff_gain,
-                max_steer=kin_mpc_max_steer,
-                wheelbase=vehicle_wheelbase,
-                fallback_k_e_y=kin_mpc_fallback_k_e_y,
-                fallback_k_e_psi=kin_mpc_fallback_k_e_psi,
-            )
-        else:
-            raise ValueError(f"Unsupported lateral controller: {controller_lateral}")
-        if controller_longitudinal == "lqr":
-            self.longitudinal_controller = LongitudinalLQR(
-                initial_dt=control_dt,
-                q=lon_lqr_q,
-                r=lon_lqr_r,
-                a_min=lon_lqr_a_min,
-                a_max=lon_lqr_a_max,
-                int_error_min=lon_lqr_int_error_min,
-                int_error_max=lon_lqr_int_error_max,
-            )
-        elif controller_longitudinal == "pid":
-            self.longitudinal_controller = LongitudinalPID(
-                kp=lon_pid_kp,
-                ki=lon_pid_ki,
-                kd=lon_pid_kd,
-                a_min=lon_pid_a_min,
-                a_max=lon_pid_a_max,
-                int_error_min=lon_pid_int_error_min,
-                int_error_max=lon_pid_int_error_max,
-            )
-        else:
+        if controller_longitudinal != "pid":
             raise ValueError(f"Unsupported longitudinal controller: {controller_longitudinal}")
+        self.longitudinal_controller = LongitudinalPID(
+            kp=lon_pid_kp,
+            ki=lon_pid_ki,
+            kd=lon_pid_kd,
+            a_min=lon_pid_a_min,
+            a_max=lon_pid_a_max,
+            int_error_min=lon_pid_int_error_min,
+            int_error_max=lon_pid_int_error_max,
+        )
         self.actuator_mapper = ActuatorMapper(
             accel_map_file=accel_map_file,
             brake_map_file=brake_map_file,
             max_steer=self.max_steer,
+            steering_sign=vehicle_steering_sign,
             mass=vehicle_mass,
             aero_a=vehicle_aero_a,
             aero_b=vehicle_aero_b,
@@ -450,31 +379,19 @@ class VehicleControllerNode(Node):
             self.get_logger().info(stop_reason)
             return
 
-        if self.control_mode != "mpc+pid" and self.control_mode != "kinematic_mpc+pid":
-            self.memory.int_speed_error += (ref_point.v_ref - meas.vx) * control_update_dt
-
-        if self.control_mode == "mpc_combined":
-            delta_cmd, accel_cmd = self.combined_controller.step(
-                meas=meas,
-                ref_point=ref_point,
-                ref_path=self.reference_manager.ref,
-                memory=self.memory,
-                dt=control_update_dt,
-            )
-        else:
-            delta_cmd = self.lateral_controller.step(
-                meas=meas,
-                ref_point=ref_point,
-                ref_path=self.reference_manager.ref,
-                memory=self.memory,
-                dt=control_update_dt,
-            )
-            accel_cmd = self.longitudinal_controller.step(
-                v_ref=ref_point.v_ref,
-                vx=meas.vx,
-                memory=self.memory,
-                dt=control_update_dt,
-            )
+        delta_cmd = self.lateral_controller.step(
+            meas=meas,
+            ref_point=ref_point,
+            ref_path=self.reference_manager.ref,
+            memory=self.memory,
+            dt=control_update_dt,
+        )
+        accel_cmd = self.longitudinal_controller.step(
+            v_ref=ref_point.v_ref,
+            vx=meas.vx,
+            memory=self.memory,
+            dt=control_update_dt,
+        )
 
         steering_cmd_raw = self._clamp(delta_cmd, -self.max_steer, self.max_steer)
         steering_exec = self._rate_limit(
@@ -549,30 +466,38 @@ class VehicleControllerNode(Node):
     def _clamp(value: float, lower: float, upper: float) -> float:
         return max(min(float(value), float(upper)), float(lower))
 
+    @staticmethod
+    def _resolve_param_path(
+        path_value: str,
+        package_share_dir: Path,
+        package_source_dir: Path,
+    ) -> str:
+        path = Path(str(path_value)).expanduser()
+        if path.is_absolute():
+            return str(path)
+
+        share_candidate = package_share_dir / path
+        if share_candidate.exists():
+            return str(share_candidate)
+
+        source_candidate = package_source_dir / path
+        if source_candidate.exists():
+            return str(source_candidate)
+
+        return str(path)
+
     def _publish_zero_command(self) -> None:
         msg = InterfaceCommand()
         msg.command = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.command_pub.publish(msg)
 
     def _resolve_control_mode(self, controller_lateral: str, controller_longitudinal: str) -> str:
-        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "mpc":
-            return "mpc_combined"
-        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "lqr":
-            return "mpc+lqr"
-        if controller_lateral in {"mpc", "dynamic_mpc"} and controller_longitudinal == "pid":
-            return "mpc+pid"
-        if controller_lateral == "kinematic_mpc" and controller_longitudinal == "lqr":
-            return "kinematic_mpc+lqr"
-        if controller_lateral == "kinematic_mpc" and controller_longitudinal == "pid":
-            return "kinematic_mpc+pid"
+        if controller_lateral in {"nmpc_kbm", "kinematic_mpc"} and controller_longitudinal == "pid":
+            return "nmpc_kbm+pid"
         raise ValueError(
-            "Supported controller selections are "
-            "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
-            "'controller.longitudinal=mpc', "
-            "'controller.lateral=mpc' or 'controller.lateral=dynamic_mpc' with "
-            "'controller.longitudinal=lqr' or 'controller.longitudinal=pid', or "
-            "'controller.lateral=kinematic_mpc' with 'controller.longitudinal=lqr' "
-            "or 'controller.longitudinal=pid'."
+            "Supported controller selection is "
+            "'controller.lateral=nmpc_kbm' with 'controller.longitudinal=pid'. "
+            "The legacy value 'kinematic_mpc' is also accepted as an alias."
         )
 
     def _compute_actual_loop_dt(self, control_start_sec: float) -> float:
@@ -672,7 +597,7 @@ class VehicleControllerNode(Node):
         act_dbg,
     ) -> None:
         msg = Float32MultiArray()
-        msg.data = [
+        record_values = [
             float(meas.stamp_sec),
             float(actual_loop_dt),
             float(control_update_dt),
@@ -700,6 +625,12 @@ class VehicleControllerNode(Node):
             float(act_dbg.f_resist),
             float(act_dbg.f_required),
         ]
+        msg.layout.dim = [
+            MultiArrayDimension(label=name, size=1, stride=1)
+            for name in CONTROLLER_RECORD_FIELDS
+        ]
+        msg.layout.data_offset = 0
+        msg.data = record_values
         self.record_pub.publish(msg)
 
 

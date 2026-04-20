@@ -5,81 +5,52 @@ vehicle_controller:
     command_topic: "/command"
     enable_topic: "/enable"
     record_topic: "/controller_record"
-    controller:
-      lateral: "kinematic_mpc"
-      longitudinal: "pid"
+    sygnal_state_topic: "/sygnal_state"
+    sygnal_fault_topic: "/sygnal_fault"
 
-    sim:
-      dt: 0.10
-      progress_window: 5
+    controller.lateral: "nmpc_kbm"
+    controller.longitudinal: "pid"
 
-    speed:
-      mode: "constant"
-      constant_value: 3.0
-      profile: "referencePath_Velocity_peak_velocity_3"
-      smoothing_enabled: true
-      smoothing_accel_scale: 0.85
-      initial_smoothed_value: 0.5
+    sim.dt: 0.10
+    sim.progress_window: 5
 
-    accel_limits:
-      a_max: 3.372
-      a_min: -7.357
+    ref.path_file: "data/path_ref.mat"
 
-    mpc_combined:
-      N: 25
-      Q: [15.0, 12.0, 8.0, 10.0, 8.0, 20.0]
-      R: [5.0, 0.5]
-      Rd: [15.0, 2.0]
-      kappa_ff_gain: 0.5
-      max_steer: 0.3490658504
-      a_min: -7.357
-      a_max: 3.372
+    speed.mode: "profile"
+    speed.constant_value: 3.0
+    speed.profile: "3"
+    speed.smoothing_enabled: true
+    speed.smoothing_accel_scale: 0.85
+    speed.initial_smoothed_value: 0.5
 
-    mpc:
-      N: 25
-      Q: [15.0, 12.0, 8.0, 10.0]
-      R: 5.0
-      Rd: 15.0
-      kappa_ff_gain: 0.5
-      max_steer: 0.3490658504
+    accel_limits.a_max: 3.372
+    accel_limits.a_min: -7.357
 
-    kinematic_mpc:
-      N: 16
-      Q: [2.2, 0.8]
-      R: 25.0
-      Rd: 15.0
-      kappa_ff_gain: 0.1
-      max_steer: 0.3490658504
-      fallback_k_e_y: 0.9
-      fallback_k_e_psi: 1.4
+    nmpc_kbm.N: 5
+    nmpc_kbm.q_x: 32.0
+    nmpc_kbm.q_y: 32.0
+    nmpc_kbm.q_psi: 4.0
+    nmpc_kbm.r_delta: 64.0
+    nmpc_kbm.r_du: 64.0
+    nmpc_kbm.max_iterations: 100
+    nmpc_kbm.max_fun_evals: 4000
 
-    lon_lqr:
-      Q: [10.0, 3.0]
-      R: 1.5
-      a_min: -7.357
-      a_max: 3.372
-      int_error_min: -10.0
-      int_error_max: 10.0
+    lon_pid.kp: 1.6
+    lon_pid.ki: 0.0
+    lon_pid.kd: 0.0
+    lon_pid.a_min: -7.357
+    lon_pid.a_max: 3.372
+    lon_pid.int_error_min: -10.0
+    lon_pid.int_error_max: 10.0
 
-    lon_pid:
-      kp: 1.6
-      ki: 0.0
-      kd: 0.0
-      a_min: -7.357
-      a_max: 3.372
-      int_error_min: -10.0
-      int_error_max: 10.0
+    timing.dt_min: 0.01
+    timing.dt_max: 0.20
+    timing.min_control_period: 0.10
 
-    timing:
-      dt_min: 0.05
-      dt_max: 0.10
-      min_control_period: 0.10
-
-    end_condition:
-      max_lateral_error: 7.0
-      max_longitudinal_error: 7.0
-      goal_index_margin: 3
-      goal_lateral_error: 2.0
-      goal_longitudinal_error: 2.0
-      goal_heading_error: 0.0872664626
-      goal_speed_threshold: 2.0
+    end_condition.max_lateral_error: 7.0
+    end_condition.max_longitudinal_error: 7.0
+    end_condition.goal_index_margin: 3
+    end_condition.goal_lateral_error: 2.0
+    end_condition.goal_longitudinal_error: 2.0
+    end_condition.goal_heading_error: 0.0872664626
+    end_condition.goal_speed_threshold: 2.0

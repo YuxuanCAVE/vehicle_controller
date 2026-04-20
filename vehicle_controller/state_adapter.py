@@ -8,6 +8,27 @@ from vehicle_controller.types import ControllerMemory, MeasuredState
 
 
 class StateAdapter:
+    """Adapt OxTS odometry/IMU messages to the controller state.
+
+    Frame assumptions used by this adapter:
+
+    - ``odom.pose.pose`` is the sensor pose in the world/LRF frame.
+    - ``odom.twist.twist.linear`` is treated as linear velocity expressed in the
+      odometry child frame (``oxts_link``), which we use as the sensor/body frame
+      for planar control.
+    - ``imu.angular_velocity`` is treated as angular velocity in the IMU/body
+      frame. For planar control we use ``imu.angular_velocity.z`` as yaw rate.
+    - The configured sensor offset ``(x, y, z)`` is the rigid-body transform from
+      the sensor origin to the controller tracking point, expressed in the same
+      body frame convention as the velocity components.
+
+    Under these assumptions:
+
+    - position is compensated using ``p_control = p_sensor + R * offset``
+    - linear velocity is compensated using rigid-body kinematics
+      ``v_control = v_sensor + omega x offset``
+    """
+
     def __init__(
         self,
         max_state_age_sec: float = 0.2,
@@ -55,6 +76,12 @@ class StateAdapter:
             position_z=float(odom.pose.pose.position.z),
             rotation_matrix=rot,
         )
+        yaw_rate = float(imu.angular_velocity.z)
+        vx_center, vy_center = self._compensate_linear_velocity_to_control_point(
+            vx_sensor=float(odom.twist.twist.linear.x),
+            vy_sensor=float(odom.twist.twist.linear.y),
+            yaw_rate=yaw_rate,
+        )
 
         delta_prev = 0.0
         if memory is not None:
@@ -69,9 +96,9 @@ class StateAdapter:
             x=x_center,
             y=y_center,
             yaw=yaw,
-            vx=odom.twist.twist.linear.x,
-            vy=odom.twist.twist.linear.y,
-            yaw_rate=imu.angular_velocity.z,
+            vx=vx_center,
+            vy=vy_center,
+            yaw_rate=yaw_rate,
             ax=imu.linear_acceleration.x,
             delta_prev=delta_prev,
             stamp_sec=stamp_sec,
@@ -102,6 +129,32 @@ class StateAdapter:
         dy = rotation_matrix[1][0] * tx + rotation_matrix[1][1] * ty + rotation_matrix[1][2] * tz
         dz = rotation_matrix[2][0] * tx + rotation_matrix[2][1] * ty + rotation_matrix[2][2] * tz
         return position_x + dx, position_y + dy, position_z + dz
+
+    def _compensate_linear_velocity_to_control_point(
+        self,
+        vx_sensor: float,
+        vy_sensor: float,
+        yaw_rate: float,
+    ) -> tuple[float, float]:
+        """Shift body-frame linear velocity from the sensor origin to the control point.
+
+        For planar rigid-body motion:
+
+        ``v_point = v_sensor + omega x r``
+
+        with:
+        - ``omega = [0, 0, yaw_rate]``
+        - ``r = [sensor_offset_x, sensor_offset_y, 0]``
+
+        which yields:
+
+        - ``vx_point = vx_sensor - yaw_rate * sensor_offset_y``
+        - ``vy_point = vy_sensor + yaw_rate * sensor_offset_x``
+        """
+
+        vx_point = float(vx_sensor) - float(yaw_rate) * self.sensor_offset_y
+        vy_point = float(vy_sensor) + float(yaw_rate) * self.sensor_offset_x
+        return vx_point, vy_point
 
     @staticmethod
     def _rotation_matrix_from_quaternion(

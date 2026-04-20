@@ -160,69 +160,23 @@ class ReferenceManager:
             d2 = (x_ref[i0 : i1 + 1] - x) ** 2 + (y_ref[i0 : i1 + 1] - y) ** 2
             idx = i0 + int(np.argmin(d2))
 
-        candidates = []
-        if idx > 0:
-            candidates.append((idx - 1, idx))
-        if idx < n - 1:
-            candidates.append((idx, idx + 1))
+        xr = float(x_ref[idx])
+        yr = float(y_ref[idx])
 
-        if not candidates:
-            raise RuntimeError("No valid candidate segment found.")
+        if idx == 0:
+            psi_r = np.arctan2(y_ref[1] - y_ref[0], x_ref[1] - x_ref[0])
+        elif idx == n - 1:
+            psi_r = np.arctan2(y_ref[n - 1] - y_ref[n - 2], x_ref[n - 1] - x_ref[n - 2])
+        else:
+            psi_r = np.arctan2(y_ref[idx + 1] - y_ref[idx - 1], x_ref[idx + 1] - x_ref[idx - 1])
 
-        best_dist2 = float("inf")
-        xr = yr = psi_r = ey = seg_t = None
-        seg_idx = None
+        dx = float(x) - xr
+        dy = float(y) - yr
+        ey = -np.sin(psi_r) * dx + np.cos(psi_r) * dy
 
-        for i_a, i_b in candidates:
-            ax = x_ref[i_a]
-            ay = y_ref[i_a]
-            bx = x_ref[i_b]
-            by = y_ref[i_b]
-
-            abx = bx - ax
-            aby = by - ay
-            apx = x - ax
-            apy = y - ay
-
-            denom = abx * abx + aby * aby
-            if denom < 1e-12:
-                continue
-
-            t = (apx * abx + apy * aby) / denom
-            t = min(1.0, max(0.0, t))
-
-            xp = ax + t * abx
-            yp = ay + t * aby
-            dx = x - xp
-            dy = y - yp
-            dist2 = dx * dx + dy * dy
-
-            if dist2 < best_dist2:
-                best_dist2 = dist2
-                xr = xp
-                yr = yp
-                seg_idx = i_a
-                seg_t = t
-                psi_r = np.arctan2(aby, abx)
-                ey = -np.sin(psi_r) * dx + np.cos(psi_r) * dy
-
-        if xr is None:
-            xr = x_ref[idx]
-            yr = y_ref[idx]
-            if idx < n - 1:
-                psi_r = np.arctan2(y_ref[idx + 1] - y_ref[idx], x_ref[idx + 1] - x_ref[idx])
-                seg_idx = idx
-                seg_t = 0.0
-            else:
-                psi_r = np.arctan2(y_ref[idx] - y_ref[idx - 1], x_ref[idx] - x_ref[idx - 1])
-                seg_idx = idx - 1
-                seg_t = 1.0
-
-            dx = x - xr
-            dy = y - yr
-            ey = -np.sin(psi_r) * dx + np.cos(psi_r) * dy
-
-        return idx, xr, yr, psi_r, ey, int(seg_idx), float(seg_t)
+        seg_idx = idx
+        seg_t = 0.0
+        return idx, xr, yr, float(psi_r), float(ey), int(seg_idx), float(seg_t)
 
     @staticmethod
     def _interpolate_projected_curvature(

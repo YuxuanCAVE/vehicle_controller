@@ -1,6 +1,0 @@
-setuptools
-numpy
-scipy
-
-[test]
-pytest

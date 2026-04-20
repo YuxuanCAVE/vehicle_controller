@@ -1,31 +1,21 @@
 vehicle_controller:
   ros__parameters:
-    vehicle:
-      mass: 1948.0
-      wheelbase: 2.720
-      lf: 1.214
-      lr: 1.506
-      iz: 2500.0
+    vehicle.mass: 1948.0
+    vehicle.wheelbase: 2.720
+    vehicle.lr: 1.506
 
-      aero_a: 45.0
-      aero_b: 10.0
-      aero_c: 0.518
+    vehicle.aero_a: 45.0
+    vehicle.aero_b: 10.0
+    vehicle.aero_c: 0.518
 
-      max_steer: 0.3490658504
-      max_steer_rate: 0.2617993878
-      max_pedal_publish: 0.60
-      sensor_offset_x: 1.14
-      sensor_offset_y: 0.32
-      sensor_offset_z: 0.0
+    vehicle.max_steer: 0.6108652382
+    vehicle.max_steer_rate: 0.6108652382
+    vehicle.steering_sign: -1.0
+    vehicle.max_pedal_publish: 0.60
 
-      tire:
-        front:
-          b: 9.5
-          c: 1.30
-          d: 8000.0
-          calpha: 98800.0
-        rear:
-          b: 10.5
-          c: 1.30
-          d: 8500.0
-          calpha: 116025.0
+    vehicle.sensor_offset_x: 1.14
+    vehicle.sensor_offset_y: 0.32
+    vehicle.sensor_offset_z: 0.0
+
+    vehicle.accel_map_file: "data/Acc_mapData_noSlope.mat"
+    vehicle.brake_map_file: "data/brake_mapData_noSlope.mat"
