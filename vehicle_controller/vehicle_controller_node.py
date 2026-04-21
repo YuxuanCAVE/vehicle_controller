@@ -117,6 +117,7 @@ class VehicleControllerNode(Node):
         self.declare_parameter("timing.dt_min", 0.01)
         self.declare_parameter("timing.dt_max", 0.10)
         self.declare_parameter("timing.min_control_period", 0.10)
+        self.declare_parameter("timing.startup_warmup_sec", 0.0)
         self.declare_parameter("end_condition.max_lateral_error", 7.0)
         self.declare_parameter("end_condition.max_longitudinal_error", 7.0)
         self.declare_parameter("end_condition.goal_index_margin", 3)
@@ -203,6 +204,10 @@ class VehicleControllerNode(Node):
         self.dt_update_min = float(self.get_parameter("timing.dt_min").value)
         self.dt_update_max = float(self.get_parameter("timing.dt_max").value)
         self.min_control_period = float(self.get_parameter("timing.min_control_period").value)
+        self.startup_warmup_sec = max(
+            float(self.get_parameter("timing.startup_warmup_sec").value),
+            0.0,
+        )
         self.max_lateral_error = float(self.get_parameter("end_condition.max_lateral_error").value)
         self.max_longitudinal_error = float(
             self.get_parameter("end_condition.max_longitudinal_error").value
@@ -304,12 +309,14 @@ class VehicleControllerNode(Node):
         self._last_wait_log_sec = 0.0
         self._prev_control_start_sec: float | None = None
         self._last_control_update_sec: float | None = None
+        self._startup_warmup_start_sec: float | None = None
 
         self.get_logger().info(
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
             f"command={command_topic}, enable={enable_topic}, record={record_topic}, "
             f"sygnal_state={sygnal_state_topic}, sygnal_fault={sygnal_fault_topic}, "
             f"initial_dt={control_dt:.3f}s, min_control_period={self.min_control_period:.3f}s, "
+            f"startup_warmup={self.startup_warmup_sec:.3f}s, "
             f"controller={self.control_mode}"
         )
 
@@ -341,6 +348,7 @@ class VehicleControllerNode(Node):
         actual_loop_dt = self._compute_actual_loop_dt(now_sec)
 
         if self.sygnal_fault_active:
+            self._reset_startup_warmup()
             self._publish_zero_command()
             self._publish_enable(False)
             self._throttled_wait_log(
@@ -350,11 +358,13 @@ class VehicleControllerNode(Node):
             return
 
         if not self.state_adapter.is_ready():
+            self._reset_startup_warmup()
             self._publish_enable(False)
             self._throttled_wait_log(now_sec, "waiting for odometry and imu")
             return
 
         if not self.state_adapter.has_fresh_data(now_sec):
+            self._reset_startup_warmup()
             self._publish_enable(False)
             self._throttled_wait_log(now_sec, "state data received but not fresh enough")
             return
@@ -403,6 +413,29 @@ class VehicleControllerNode(Node):
 
         accel_cmd_exec = accel_cmd
         cmd, act_dbg = self._build_command(steering_exec, accel_cmd_exec, meas.vx)
+
+        if self._in_startup_warmup(now_sec):
+            self._publish_zero_command()
+            self._publish_enable(False)
+            self._publish_record(
+                meas=meas,
+                ref_point=ref_point,
+                actual_loop_dt=actual_loop_dt,
+                control_update_dt=control_update_dt,
+                e_longitudinal=e_longitudinal,
+                steering_exec=steering_exec,
+                cmd=cmd,
+                act_dbg=act_dbg,
+            )
+            self._throttled_wait_log(
+                now_sec,
+                (
+                    "warming up controller before enabling commands "
+                    f"({self.startup_warmup_sec:.2f}s)"
+                ),
+            )
+            return
+
         self.memory.last_steering_rad = steering_exec
         self.memory.last_steering_command = cmd.steering
         self.memory.last_accel_cmd = cmd.accel_cmd
@@ -539,6 +572,17 @@ class VehicleControllerNode(Node):
         if now_sec - self._last_wait_log_sec >= 1.0:
             self.get_logger().info(text)
             self._last_wait_log_sec = now_sec
+
+    def _reset_startup_warmup(self) -> None:
+        self._startup_warmup_start_sec = None
+
+    def _in_startup_warmup(self, now_sec: float) -> bool:
+        if self.startup_warmup_sec <= 0.0:
+            return False
+        if self._startup_warmup_start_sec is None:
+            self._startup_warmup_start_sec = float(now_sec)
+            return True
+        return (float(now_sec) - float(self._startup_warmup_start_sec)) < self.startup_warmup_sec
 
     def _smooth_reference_speed(self, v_ref_raw: float, vx: float, dt: float) -> float:
         v_ref_raw = max(float(v_ref_raw), 0.0)

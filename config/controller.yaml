@@ -46,6 +46,7 @@ vehicle_controller:
     timing.dt_min: 0.01
     timing.dt_max: 0.20
     timing.min_control_period: 0.10
+    timing.startup_warmup_sec: 0.50
 
     end_condition.max_lateral_error: 7.0
     end_condition.max_longitudinal_error: 7.0

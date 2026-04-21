@@ -112,7 +112,7 @@ Important parameter groups:
   flipped before publish while remaining in radians
 - `vehicle.max_pedal_publish`: DBW pedal ceiling, currently `0.60`
 - `timing.*`: measured `dt` clamp range for update logic
-  and the minimum control update period
+  the minimum control update period, and optional startup warmup time before commands are enabled
 - `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
 - `record_topic`: debug/record topic for ros2 bag logging
 
