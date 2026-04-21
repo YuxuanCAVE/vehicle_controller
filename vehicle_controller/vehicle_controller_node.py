@@ -104,8 +104,8 @@ class VehicleControllerNode(Node):
         self.declare_parameter("vehicle.aero_a", 45.0)
         self.declare_parameter("vehicle.aero_b", 10.0)
         self.declare_parameter("vehicle.aero_c", 0.518)
-        self.declare_parameter("vehicle.max_steer", 0.3490658504)
-        self.declare_parameter("vehicle.max_steer_rate", 0.2617993878)
+        self.declare_parameter("vehicle.max_steer", 0.6108652382)
+        self.declare_parameter("vehicle.max_steer_rate", 0.6108652382)
         self.declare_parameter("vehicle.steering_sign", -1.0)
         self.declare_parameter("vehicle.max_pedal_publish", 0.60)
         self.declare_parameter("vehicle.sensor_offset_x", 1.14)
@@ -116,7 +116,6 @@ class VehicleControllerNode(Node):
 
         self.declare_parameter("timing.dt_min", 0.01)
         self.declare_parameter("timing.dt_max", 0.10)
-        self.declare_parameter("timing.min_control_period", 0.10)
         self.declare_parameter("timing.startup_warmup_sec", 0.0)
         self.declare_parameter("end_condition.max_lateral_error", 7.0)
         self.declare_parameter("end_condition.max_longitudinal_error", 7.0)
@@ -203,7 +202,6 @@ class VehicleControllerNode(Node):
 
         self.dt_update_min = float(self.get_parameter("timing.dt_min").value)
         self.dt_update_max = float(self.get_parameter("timing.dt_max").value)
-        self.min_control_period = float(self.get_parameter("timing.min_control_period").value)
         self.startup_warmup_sec = max(
             float(self.get_parameter("timing.startup_warmup_sec").value),
             0.0,
@@ -315,8 +313,7 @@ class VehicleControllerNode(Node):
             f"vehicle_controller started, odom={odom_topic}, imu={imu_topic}, "
             f"command={command_topic}, enable={enable_topic}, record={record_topic}, "
             f"sygnal_state={sygnal_state_topic}, sygnal_fault={sygnal_fault_topic}, "
-            f"initial_dt={control_dt:.3f}s, min_control_period={self.min_control_period:.3f}s, "
-            f"startup_warmup={self.startup_warmup_sec:.3f}s, "
+            f"initial_dt={control_dt:.3f}s, startup_warmup={self.startup_warmup_sec:.3f}s, "
             f"controller={self.control_mode}"
         )
 
@@ -369,9 +366,6 @@ class VehicleControllerNode(Node):
             self._throttled_wait_log(now_sec, "state data received but not fresh enough")
             return
 
-        if not self._should_update_control(now_sec):
-            return
-
         control_update_dt = self._compute_control_update_dt(now_sec)
 
         meas = self.state_adapter.build_measured_state(self.memory)
@@ -403,13 +397,7 @@ class VehicleControllerNode(Node):
             dt=control_update_dt,
         )
 
-        steering_cmd_raw = self._clamp(delta_cmd, -self.max_steer, self.max_steer)
-        steering_exec = self._rate_limit(
-            steering_cmd_raw,
-            meas.delta_prev,
-            self.max_steer_rate,
-            control_update_dt,
-        )
+        steering_exec = self._clamp(delta_cmd, -self.max_steer, self.max_steer)
 
         accel_cmd_exec = accel_cmd
         cmd, act_dbg = self._build_command(steering_exec, accel_cmd_exec, meas.vx)
@@ -488,12 +476,6 @@ class VehicleControllerNode(Node):
         msg.enable = [bool(enabled), bool(enabled), bool(enabled), False, False, False, False]
         self.enable_pub.publish(msg)
 
-    @staticmethod
-    def _rate_limit(u_cmd: float, u_prev: float, rate_limit: float, dt: float) -> float:
-        delta_max = float(rate_limit) * float(dt)
-        du = float(u_cmd) - float(u_prev)
-        du = max(min(du, delta_max), -delta_max)
-        return float(u_prev) + du
 
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:
@@ -547,11 +529,6 @@ class VehicleControllerNode(Node):
             return self.control_dt
 
         return self._clamp(actual_loop_dt, self.dt_update_min, self.dt_update_max)
-
-    def _should_update_control(self, now_sec: float) -> bool:
-        if self._last_control_update_sec is None:
-            return True
-        return (float(now_sec) - float(self._last_control_update_sec)) >= self.min_control_period
 
     def _compute_control_update_dt(self, control_start_sec: float) -> float:
         # Initialize the first true control update with the nominal period.

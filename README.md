@@ -77,10 +77,6 @@ with clamping:
 - `timing.dt_max`
 
 This keeps the first step well-defined while letting the controller follow actual ROS timing.
-To avoid running the control law faster than intended, the node also enforces
-`timing.min_control_period`. If callbacks arrive faster than that period, the node
-skips command publication and only recomputes and publishes a new command when the minimum
-period elapses.
 
 The ROS runtime parameters are now aligned with the current MATLAB config naming:
 - `controller.*`
@@ -112,7 +108,7 @@ Important parameter groups:
   flipped before publish while remaining in radians
 - `vehicle.max_pedal_publish`: DBW pedal ceiling, currently `0.60`
 - `timing.*`: measured `dt` clamp range for update logic
-  the minimum control update period, and optional startup warmup time before commands are enabled
+  and optional startup warmup time before commands are enabled
 - `end_condition.*`: controller stop conditions for goal completion and excessive tracking error
 - `record_topic`: debug/record topic for ros2 bag logging
 
